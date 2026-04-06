@@ -9,286 +9,555 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'JetBrains Mono',monospace;background:#0a0e17;color:#c8d6e5;min-height:100vh}
   a{color:#3b82f6;text-decoration:none} a:hover{text-decoration:underline}
-  .header{background:linear-gradient(135deg,#0f1923,#1a1f35);border-bottom:1px solid #1e293b;padding:20px 24px}
-  .header-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+  .hdr{background:linear-gradient(135deg,#0f1923,#1a1f35);border-bottom:1px solid #1e293b;padding:20px 24px}
+  .hdr-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
   .tsub{font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px}
   .tmain{font-size:20px;font-weight:700;color:#e2e8f0} .tmain span{color:#f59e0b}
   .meta{font-size:10px;color:#475569;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
   .btn{border:1px solid #3b82f6;color:#93c5fd;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;background:#1e40af}
   .btn:disabled{background:#1e293b;cursor:wait}
-  .btn-sm{background:#dc2626;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit}
-  .alert-badge{background:#dc262620;border:1px solid #dc2626;border-radius:6px;padding:6px 12px;font-size:12px;color:#ef4444;font-weight:700;animation:pulse 2s infinite}
-  .progress{margin-top:10px;height:3px;background:#1e293b;border-radius:2px;overflow:hidden}
-  .pbar{height:100%;background:#f59e0b;border-radius:2px;transition:width .5s ease}
-  .errbar{margin:12px 24px 0;padding:12px;background:#dc262615;border:1px solid #dc262650;border-radius:8px;color:#fca5a5;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+  .btn-sm{border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit}
+  .abadge{background:#dc262620;border:1px solid #dc2626;border-radius:6px;padding:6px 12px;font-size:12px;color:#ef4444;font-weight:700;animation:pulse 2s infinite}
+  .prog{margin-top:10px;height:3px;background:#1e293b;border-radius:2px;overflow:hidden}
+  .pbar{height:100%;background:#f59e0b;border-radius:2px;transition:width .5s}
+  .err{margin:12px 24px 0;padding:12px;background:#dc262615;border:1px solid #dc262650;border-radius:8px;color:#fca5a5;font-size:12px;display:flex;justify-content:space-between;align-items:center}
   .abanner{margin:12px 24px 0;padding:16px;background:#dc262612;border:1px solid #dc2626;border-radius:8px}
-  .tabs{display:flex;gap:0;margin:12px 24px 0;border-bottom:1px solid #1e293b}
-  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:#64748b;padding:10px 20px;cursor:pointer;font-size:12px;font-family:inherit;text-transform:uppercase;letter-spacing:1px}
+  .tabs{display:flex;gap:0;margin:12px 24px 0;border-bottom:1px solid #1e293b;overflow-x:auto}
+  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:#64748b;padding:10px 16px;cursor:pointer;font-size:11px;font-family:inherit;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
   .tab.active{background:#1e293b;border-bottom-color:#f59e0b;color:#f59e0b;font-weight:700}
-  .content{padding:16px 24px}
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:20px}
-  .card{background:#111827;border-radius:8px;padding:16px;position:relative;overflow:hidden}
-  .cstripe{position:absolute;top:0;left:0;width:3px;height:100%}
-  .clabel{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
-  .cval{font-size:22px;font-weight:700} .cunit{font-size:10px;color:#475569;margin-top:2px}
-  .panel{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:16px;margin-bottom:20px}
-  .plabel{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
-  .gtrack{height:8px;background:#1e293b;border-radius:4px;overflow:hidden;margin-bottom:8px}
-  .gfill{height:100%;border-radius:4px;transition:width .5s ease}
-  .glabels{display:flex;justify-content:space-between;font-size:11px}
-  .txrow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #1e293b;font-size:12px}
-  .txrow:last-child{border-bottom:none}
-  .txdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-  .txl{display:flex;align-items:center;gap:10px}
-  .rule{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:14px;margin-bottom:10px}
+  .cnt{padding:16px 24px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+  .card{background:#111827;border-radius:8px;padding:14px;position:relative;overflow:hidden}
+  .cs{position:absolute;top:0;left:0;width:3px;height:100%}
+  .cl{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .cv{font-size:20px;font-weight:700} .cu{font-size:9px;color:#475569;margin-top:2px}
+  .panel{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
+  .pl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+  .gtrk{height:8px;background:#1e293b;border-radius:4px;overflow:hidden;margin-bottom:8px}
+  .gfil{height:100%;border-radius:4px;transition:width .5s}
+  .glbl{display:flex;justify-content:space-between;font-size:11px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th{padding:8px 10px;text-align:left;color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;background:#1e293b;position:sticky;top:0}
+  td{padding:8px 10px;border-bottom:1px solid #1e293b}
+  .tag{padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600}
+  .rule{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
   .rule.alert{background:#dc262610;border-color:#dc2626}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  th{padding:10px 12px;text-align:left;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;background:#1e293b}
-  td{padding:10px 12px;border-bottom:1px solid #1e293b}
-  .ext-row{background:#dc262610}
+  .rule.warn{background:#f59e0b10;border-color:#f59e0b}
+  .rule.ok{background:#22c55e08;border-color:#22c55e40}
+  .vbar{display:flex;align-items:flex-end;gap:2px;height:60px}
+  .vbar div{background:#3b82f6;border-radius:2px 2px 0 0;min-width:8px;transition:height .3s}
   .hidden{display:none}
-  .tag{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
-  .setup-box{margin:12px 24px 0;padding:16px;background:#111827;border:1px solid #f59e0b50;border-radius:8px}
-  .setup-box input{background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:4px;font-family:inherit;font-size:12px;width:100%;margin-top:8px}
-  .setup-box input:focus{outline:none;border-color:#f59e0b}
   .footer{padding:16px 24px;border-top:1px solid #1e293b;font-size:10px;color:#374151;text-align:center}
+  .ext-row{background:#dc262610}
+  .win{color:#22c55e} .loss{color:#ef4444} .neutral{color:#64748b}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-  ::-webkit-scrollbar{height:6px} ::-webkit-scrollbar-track{background:#1e293b} ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+  ::-webkit-scrollbar{height:6px;width:6px} ::-webkit-scrollbar-track{background:#1e293b} ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div class="header-top">
+<div class="hdr">
+  <div class="hdr-top">
     <div>
       <div class="tsub">Risk Management Console</div>
       <div class="tmain">Alvin <span>Trading Monitor</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px">
-      <div id="alertBadge" class="alert-badge hidden">⚠ ALERT</div>
-      <button class="btn" id="refreshBtn" onclick="fetchAll()">↻ Refresh</button>
+      <div id="aBadge" class="abadge hidden"></div>
+      <span id="statusDot" style="font-size:10px;color:#475569">● connecting</span>
+      <button class="btn" id="rBtn" onclick="init()">↻ Refresh</button>
     </div>
   </div>
   <div class="meta">
     <span>Wallet: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt" target="_blank">6gYe..yqQt ↗</a></span>
     <span>Multisig: <a href="https://solscan.io/account/Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ" target="_blank">Grtr..GXSZ ↗</a></span>
-    <span id="rpcLabel" style="color:#f59e0b"></span>
-    <span id="updatedAt"></span>
+    <span id="txCount"></span>
+    <span id="updAt"></span>
   </div>
-  <div class="progress hidden" id="progWrap"><div class="pbar" id="progBar"></div></div>
+  <div class="prog hidden" id="pWrap"><div class="pbar" id="pBar"></div></div>
 </div>
 
-<!-- RPC Setup -->
-<div class="setup-box" id="setupBox">
-  <div style="font-size:13px;color:#f59e0b;font-weight:700;margin-bottom:6px">⚡ RPC Configuration</div>
-  <div style="font-size:11px;color:#94a3b8;line-height:1.6">
-    Public RPCs can be unreliable. For guaranteed access, get a <strong>free</strong> Helius API key at
-    <a href="https://helius.dev" target="_blank">helius.dev</a> (takes 30 seconds, 100k requests/day free), then paste it below:
-  </div>
-  <input type="text" id="heliusKey" placeholder="Paste Helius API key here (optional — will try public RPCs first)" oninput="saveKey(this.value)">
-  <div style="font-size:10px;color:#475569;margin-top:6px">Key is stored in your browser only (localStorage). Leave blank to use public endpoints.</div>
-</div>
-
-<div id="errBar" class="errbar hidden"><span id="errMsg"></span><button class="btn-sm" onclick="fetchAll()">Retry</button></div>
-<div id="alertBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 NON-MULTISIG DEPOSIT DETECTED</div><div id="alertDetails" style="font-size:12px;color:#fca5a5"></div><div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:6px">ESCALATION TRIGGER — Per agreement, Ken may notify Queenie</div></div>
+<div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
+<div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 
 <div class="tabs">
-  <button class="tab active" onclick="switchTab('overview',this)">Overview</button>
-  <button class="tab" onclick="switchTab('transactions',this)">Transactions</button>
-  <button class="tab" onclick="switchTab('rules',this)">Rules</button>
+  <button class="tab active" onclick="stab('overview',this)">Overview</button>
+  <button class="tab" onclick="stab('trades',this)">Trades</button>
+  <button class="tab" onclick="stab('compliance',this)">Compliance</button>
+  <button class="tab" onclick="stab('weekly',this)">Weekly</button>
+  <button class="tab" onclick="stab('rules',this)">Rules</button>
 </div>
 
-<div class="content">
-  <div id="tab-overview">
-    <div class="cards" id="cardsGrid"></div>
-    <div class="panel hidden" id="gaugePanel"><div class="plabel">Budget Utilization</div><div class="gtrack"><div class="gfill" id="gaugeFill"></div></div><div class="glabels"><span id="gL" style="color:#94a3b8"></span><span id="gR"></span></div></div>
-    <div class="panel"><div class="plabel">Parsed Transactions</div><div id="txList"><div style="color:#475569;font-size:12px;text-align:center;padding:20px">Click Refresh to load…</div></div><div class="hidden" id="moreLink" style="margin-top:12px;padding:8px;background:#1e293b;border-radius:6px;font-size:11px;color:#64748b;text-align:center"></div></div>
-  </div>
-  <div id="tab-transactions" class="hidden"><div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Type</th><th>SOL Δ</th><th>USDC Δ</th><th>Counterparty</th><th>Source</th><th>Sig</th></tr></thead><tbody id="txTable"><tr><td colspan="7" style="text-align:center;color:#475569;padding:30px">Click Refresh</td></tr></tbody></table></div><div style="padding:12px;border-top:1px solid #1e293b;text-align:center;font-size:11px;color:#475569">Full history: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt#txs" target="_blank">Solscan ↗</a></div></div></div>
-  <div id="tab-rules" class="hidden"><div id="rulesList"></div><div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div></div>
+<div class="cnt">
+  <div id="tab-overview"></div>
+  <div id="tab-trades" class="hidden"></div>
+  <div id="tab-compliance" class="hidden"></div>
+  <div id="tab-weekly" class="hidden"></div>
+  <div id="tab-rules" class="hidden"></div>
 </div>
 
-<div class="footer">Trial: May 5 – Aug 3, 2026 · Download and open this file in your browser for live blockchain data</div>
+<div class="footer">Trial: May 5 – Aug 3, 2026 · Alvin & Ken Trading Control Framework · Data via Helius Enhanced API</div>
 
 <script>
 const W = "6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt";
 const MS = "Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ";
-const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const BUDGET = 125;
-
-const PUBLIC_RPCS = [
-  "https://rpc.ankr.com/solana",
-  "https://solana-rpc.publicnode.com",
-  "https://api.mainnet-beta.solana.com",
-];
-
-function heliusRpc() {
-  const k = (document.getElementById('heliusKey')?.value || '').trim();
-  return k ? `https://mainnet.helius-rpc.com/?api-key=${k}` : null;
-}
-
-function saveKey(v) { try { localStorage.setItem('helius_key', v.trim()); } catch {} }
-function loadKey() { try { return localStorage.getItem('helius_key') || ''; } catch { return ''; } }
-
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const HELIUS_KEY = "235a7270-8c96-4fba-8655-6d732e4ba772";
+const HELIUS = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
+const HELIUS_API = `https://api.helius.dev/v0/addresses/${W}/transactions?api-key=${HELIUS_KEY}`;
+const BUDGET_WEEKLY = 125;
+const BUDGET_MONTHLY = 500;
+const MAX_POS_PCT = 0.05;
+const ALLOWED_ASSETS = ['SOL','BTC','ETH','USDC','wBTC','WBTC','mSOL','JitoSOL','USDT'];
+const CURFEW_HOUR = 0; // midnight AEST (UTC+10/11)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
+const $ = id => document.getElementById(id);
 
-let activeRpc = null;
+// ─── State ───
+let S = { sol:null, usdc:null, trades:[], allTxns:[], violations:[], weeklyData:[] };
 
+// ─── RPC ───
 async function rpc(method, params) {
-  // Build endpoint list: Helius first (if key provided), then publics
-  const endpoints = [];
-  const h = heliusRpc();
-  if (h) endpoints.push(h);
-  endpoints.push(...PUBLIC_RPCS);
+  for (let i=0; i<3; i++) {
+    try {
+      const r = await fetch(HELIUS, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});
+      const d = await r.json();
+      if (d.error) throw new Error(d.error.message);
+      return d.result;
+    } catch(e) { if (i===2) throw e; await sleep(1000*(i+1)); }
+  }
+}
 
-  for (let i = 0; i < endpoints.length; i++) {
-    for (let retry = 0; retry < 2; retry++) {
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 10000);
-        const r = await fetch(endpoints[i], {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-          signal: ctrl.signal,
-        });
-        clearTimeout(timer);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const d = await r.json();
-        if (d.error) throw new Error(d.error.message);
-        activeRpc = endpoints[i];
-        return d.result;
-      } catch (e) {
-        if (retry === 0) await sleep(1000);
+// ─── Helius Enhanced Transactions ───
+async function fetchAllTrades() {
+  let all = [], lastSig = null, page = 0;
+  setStatus('Fetching trades…');
+  while (page < 10) { // max 1000 txns
+    let url = HELIUS_API + '&limit=100';
+    if (lastSig) url += '&before=' + lastSig;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Helius API: ' + r.status);
+    const batch = await r.json();
+    if (!batch.length) break;
+    all.push(...batch);
+    lastSig = batch[batch.length-1].signature;
+    page++;
+    setStatus(`Fetched ${all.length} transactions…`);
+    $('pBar').style.width = Math.min(90, 20 + page*8) + '%';
+    await sleep(300);
+  }
+  return all;
+}
+
+// ─── Parse Jupiter Trades ───
+function parseTrades(txns) {
+  const trades = [];
+  for (const tx of txns) {
+    if (!tx.timestamp) continue;
+    const isJup = tx.source === 'JUPITER' || (tx.description||'').toLowerCase().includes('jupiter') || (tx.type === 'SWAP' && tx.events?.swap);
+    const isPerp = (tx.description||'').toLowerCase().includes('perp');
+    
+    if (isJup || isPerp || tx.type === 'SWAP') {
+      const swap = tx.events?.swap;
+      const desc = tx.description || '';
+      
+      let tokenIn = null, tokenOut = null, amtIn = 0, amtOut = 0;
+      
+      if (swap) {
+        const ni = swap.nativeInput;
+        const no_ = swap.nativeOutput;
+        const ti = swap.tokenInputs || [];
+        const to = swap.tokenOutputs || [];
+        
+        if (ni && ni.amount > 0) { tokenIn = 'SOL'; amtIn = ni.amount / 1e9; }
+        if (no_ && no_.amount > 0) { tokenOut = 'SOL'; amtOut = no_.amount / 1e9; }
+        if (ti.length) { tokenIn = ti[0].symbol || ti[0].mint?.slice(0,6) || 'TOKEN'; amtIn = ti[0].rawTokenAmount ? ti[0].rawTokenAmount.tokenAmount / Math.pow(10, ti[0].rawTokenAmount.decimals||6) : 0; }
+        if (to.length) { tokenOut = to[0].symbol || to[0].mint?.slice(0,6) || 'TOKEN'; amtOut = to[0].rawTokenAmount ? to[0].rawTokenAmount.tokenAmount / Math.pow(10, to[0].rawTokenAmount.decimals||6) : 0; }
+      }
+      
+      // Also check tokenTransfers
+      if (!tokenIn && tx.tokenTransfers?.length) {
+        for (const t of tx.tokenTransfers) {
+          if (t.fromUserAccount === W) { tokenIn = t.symbol || t.mint?.slice(0,6) || 'TOKEN'; amtIn = t.tokenAmount || 0; }
+          if (t.toUserAccount === W) { tokenOut = t.symbol || t.mint?.slice(0,6) || 'TOKEN'; amtOut = t.tokenAmount || 0; }
+        }
+      }
+      
+      // Calculate USDC P&L
+      let usdcIn = 0, usdcOut = 0;
+      if (tokenIn === 'USDC' || tokenIn === 'USDT') usdcIn = amtIn;
+      if (tokenOut === 'USDC' || tokenOut === 'USDT') usdcOut = amtOut;
+      
+      const date = new Date(tx.timestamp * 1000);
+      const hour = date.getHours(); // local time
+      
+      trades.push({
+        sig: tx.signature,
+        time: tx.timestamp,
+        date,
+        type: isPerp ? 'Perp' : 'Swap',
+        desc: desc.substring(0, 120),
+        tokenIn, tokenOut, amtIn, amtOut,
+        usdcIn, usdcOut,
+        pnl: usdcOut - usdcIn,
+        fee: tx.fee ? tx.fee / 1e9 : 0,
+        source: tx.source || 'Unknown',
+        hour,
+        dayOfWeek: date.getDay(),
+        weekKey: getWeekKey(date),
+      });
+    }
+  }
+  return trades.sort((a,b) => b.time - a.time);
+}
+
+function getWeekKey(d) {
+  const start = new Date(d); start.setDate(start.getDate() - start.getDay() + 1);
+  return start.toISOString().slice(0,10);
+}
+
+// ─── Compliance Check ───
+function checkCompliance(trades) {
+  const violations = [];
+  
+  for (let i = 0; i < trades.length; i++) {
+    const t = trades[i];
+    
+    // 1. Asset check
+    const assets = [t.tokenIn, t.tokenOut].filter(Boolean);
+    const nonAllowed = assets.filter(a => !ALLOWED_ASSETS.some(al => a.toUpperCase().includes(al.toUpperCase())));
+    if (nonAllowed.length) {
+      violations.push({ type: 'ASSET', severity: 'warn', time: t.time, sig: t.sig, detail: `Traded non-approved asset: ${nonAllowed.join(', ')}` });
+    }
+    
+    // 2. Position size check (if USDC input > 5% of weekly budget)
+    if (t.usdcIn > BUDGET_WEEKLY * MAX_POS_PCT * 2) { // using 2x the 5% as flag threshold since leverage is 200x
+      violations.push({ type: 'SIZE', severity: 'warn', time: t.time, sig: t.sig, detail: `Position size $${t.usdcIn.toFixed(2)} may exceed 5% rule ($${(BUDGET_WEEKLY*MAX_POS_PCT).toFixed(2)})` });
+    }
+    
+    // 3. Curfew check (after midnight AEST = UTC+10, so after 14:00 UTC previous day... approximate with local time)
+    if (t.hour >= 0 && t.hour < 6) { // crude: trading between midnight and 6am local
+      violations.push({ type: 'CURFEW', severity: 'info', time: t.time, sig: t.sig, detail: `Trade at ${t.date.toLocaleTimeString()} — curfew is midnight` });
+    }
+    
+    // 4. Revenge trade detection (trade within 10 min of previous trade that lost money)
+    if (i < trades.length - 1) {
+      const prev = trades[i + 1]; // previous chronologically (array is newest-first)
+      if (prev.pnl < -0.5 && (t.time - prev.time) < 600) {
+        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${Math.floor((t.time-prev.time)/60)}min after a loss of $${Math.abs(prev.pnl).toFixed(2)}` });
       }
     }
   }
-  throw new Error("All RPC endpoints failed. Paste a free Helius API key above for reliable access.");
+  
+  // 5. Weekly budget check
+  const weeks = {};
+  trades.forEach(t => {
+    if (!weeks[t.weekKey]) weeks[t.weekKey] = { spent: 0, trades: 0 };
+    weeks[t.weekKey].spent += t.usdcIn;
+    weeks[t.weekKey].trades++;
+  });
+  
+  for (const [wk, data] of Object.entries(weeks)) {
+    if (data.spent > BUDGET_WEEKLY * 1.5) {
+      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: '', detail: `Week of ${wk}: $${data.spent.toFixed(2)} spent (budget: $${BUDGET_WEEKLY})` });
+    }
+  }
+  
+  return violations.sort((a,b) => b.time - a.time);
 }
 
-function switchTab(n, el) {
+// ─── Weekly Aggregation ───
+function aggregateWeekly(trades) {
+  const weeks = {};
+  trades.forEach(t => {
+    if (!weeks[t.weekKey]) weeks[t.weekKey] = { key: t.weekKey, trades: [], totalPnl: 0, wins: 0, losses: 0, volume: 0, count: 0, revenges: 0 };
+    const w = weeks[t.weekKey];
+    w.trades.push(t);
+    w.totalPnl += t.pnl;
+    w.volume += t.usdcIn;
+    w.count++;
+    if (t.pnl > 0) w.wins++; else if (t.pnl < 0) w.losses++;
+  });
+  return Object.values(weeks).sort((a,b) => b.key.localeCompare(a.key));
+}
+
+// ─── Tab Switching ───
+function stab(n, el) {
   document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('hidden'));
-  document.getElementById('tab-'+n).classList.remove('hidden');
+  $('tab-'+n).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
 }
 
+// ─── Helpers ───
 function fmtT(ts) { if (!ts) return '—'; return new Date(ts*1000).toLocaleDateString('en-AU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
-function ago(ts) { if (!ts) return ''; const d=Date.now()/1000-ts; if(d<60) return 'now'; if(d<3600) return Math.floor(d/60)+'m'; if(d<86400) return Math.floor(d/3600)+'h'; return Math.floor(d/86400)+'d'; }
-function tc(t) { return t==='Deposit'?'#22c55e':t==='Jupiter Swap'?'#8b5cf6':t==='Withdrawal'?'#f59e0b':'#64748b'; }
+function ago(ts) { if (!ts) return ''; const d=Date.now()/1000-ts; if(d<60)return 'now';if(d<3600)return Math.floor(d/60)+'m';if(d<86400)return Math.floor(d/3600)+'h';return Math.floor(d/86400)+'d'; }
+function pnlClass(v) { return v > 0 ? 'win' : v < 0 ? 'loss' : 'neutral'; }
+function pnlStr(v) { return v > 0 ? '+$'+v.toFixed(2) : v < 0 ? '-$'+Math.abs(v).toFixed(2) : '$0.00'; }
+function setStatus(t) { $('statusDot').innerHTML = '<span style="color:#f59e0b">●</span> ' + t; }
 
-let S = { sol:null, usdc:null, txns:[], alerts:[], sigCount:0 };
-
-function renderCards() {
-  const cs = [
-    {l:'SOL Balance',v:S.sol!==null?S.sol.toFixed(4):'…',u:'SOL',c:'#9945ff'},
-    {l:'USDC Balance',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'USDC',c:'#2775ca'},
-    {l:'Weekly Budget',v:'$'+BUDGET,u:'USDC / week',c:'#f59e0b'},
-    {l:'Recent Txns',v:S.sigCount,u:'last 10',c:'#10b981'},
-    {l:'Alerts',v:S.alerts.length,u:S.alerts.length>0?'ACTION':'clear',c:S.alerts.length>0?'#ef4444':'#22c55e'},
+// ─── Render Functions ───
+function renderOverview() {
+  const totalPnl = S.trades.reduce((s,t) => s + t.pnl, 0);
+  const wins = S.trades.filter(t => t.pnl > 0).length;
+  const losses = S.trades.filter(t => t.pnl < 0).length;
+  const winRate = S.trades.length > 0 ? (wins / S.trades.length * 100) : 0;
+  const totalVol = S.trades.reduce((s,t) => s + t.usdcIn, 0);
+  const avgTrade = S.trades.length > 0 ? totalVol / S.trades.length : 0;
+  const alerts = S.violations.filter(v => v.severity === 'alert').length;
+  const warns = S.violations.filter(v => v.severity === 'warn').length;
+  
+  const cards = [
+    {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
+    {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
+    {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
+    {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
+    {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
+    {l:'Avg Size',v:'$'+avgTrade.toFixed(2),u:'per trade',c:'#f59e0b'},
+    {l:'Volume',v:'$'+totalVol.toFixed(2),u:'total traded',c:'#06b6d4'},
+    {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
-  document.getElementById('cardsGrid').innerHTML = cs.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cstripe" style="background:${c.c}"></div><div class="clabel">${c.l}</div><div class="cval" style="color:${c.c}">${c.v}</div><div class="cunit">${c.u}</div></div>`).join('');
+  
+  let html = `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
+  
+  // Budget gauge
+  if (S.usdc !== null) {
+    const pct=Math.min(100,(S.usdc/BUDGET_WEEKLY)*100), over=S.usdc>BUDGET_WEEKLY;
+    const gc = over?'#ef4444':S.usdc>BUDGET_WEEKLY*.5?'#f59e0b':'#22c55e';
+    html += `<div class="panel"><div class="pl">Budget: $${S.usdc.toFixed(2)} / $${BUDGET_WEEKLY} weekly</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${S.usdc.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(S.usdc-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-S.usdc).toFixed(2)+' remaining'}</span></div></div>`;
+  }
+  
+  // Recent trades
+  html += `<div class="panel"><div class="pl">Last 5 Trades</div>`;
+  if (S.trades.length) {
+    html += S.trades.slice(0,5).map(t => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px">
+      <div><span style="color:#e2e8f0">${t.tokenIn||'?'} → ${t.tokenOut||'?'}</span> <span style="color:#475569;font-size:9px">${fmtT(t.time)} · ${ago(t.time)}</span></div>
+      <div style="text-align:right"><span class="${pnlClass(t.pnl)}" style="font-weight:600">${pnlStr(t.pnl)}</span> <a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px;margin-left:6px">${short(t.sig)} ↗</a></div>
+    </div>`).join('');
+  } else { html += '<div style="color:#475569;font-size:12px;text-align:center;padding:16px">No Jupiter trades found</div>'; }
+  html += '</div>';
+  
+  // Trading hour heatmap
+  if (S.trades.length > 2) {
+    const hours = Array(24).fill(0);
+    S.trades.forEach(t => hours[t.hour]++);
+    const max = Math.max(...hours, 1);
+    html += `<div class="panel"><div class="pl">Trading Hours (local time)</div><div class="vbar" style="height:50px">`;
+    for (let h=0;h<24;h++) {
+      const ht = hours[h] > 0 ? Math.max(4, (hours[h]/max)*50) : 2;
+      const danger = h >= 0 && h < 6;
+      html += `<div title="${h}:00 — ${hours[h]} trades" style="height:${ht}px;flex:1;background:${danger&&hours[h]>0?'#ef4444':'#3b82f6'};opacity:${hours[h]>0?1:0.15}"></div>`;
+    }
+    html += `</div><div style="display:flex;justify-content:space-between;font-size:9px;color:#475569;margin-top:4px"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span></div></div>`;
+  }
+  
+  $('tab-overview').innerHTML = html;
 }
 
-function renderGauge() {
-  if (S.usdc===null) { document.getElementById('gaugePanel').classList.add('hidden'); return; }
-  document.getElementById('gaugePanel').classList.remove('hidden');
-  const p=Math.min(100,(S.usdc/BUDGET)*100), o=S.usdc>BUDGET;
-  document.getElementById('gaugeFill').style.width=p+'%';
-  document.getElementById('gaugeFill').style.background=o?'#ef4444':S.usdc>BUDGET*.5?'#f59e0b':'#22c55e';
-  document.getElementById('gL').textContent='$'+S.usdc.toFixed(2)+' in wallet';
-  const r=document.getElementById('gR'); r.textContent=o?'⚠ $'+(S.usdc-BUDGET).toFixed(2)+' OVER':'$'+(BUDGET-S.usdc).toFixed(2)+' remaining'; r.style.color=o?'#ef4444':'#64748b';
+function renderTrades() {
+  if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
+  let html = `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
+    <th>Time</th><th>Type</th><th>From</th><th>To</th><th>Amt In</th><th>Amt Out</th><th>P&L</th><th>Flags</th><th>Sig</th>
+  </tr></thead><tbody>`;
+  
+  for (const t of S.trades) {
+    const flags = [];
+    const viol = S.violations.filter(v => v.sig === t.sig);
+    viol.forEach(v => {
+      if (v.type==='REVENGE') flags.push('<span style="color:#ef4444;font-size:9px">🔥 REVENGE</span>');
+      if (v.type==='CURFEW') flags.push('<span style="color:#f59e0b;font-size:9px">🌙 CURFEW</span>');
+      if (v.type==='ASSET') flags.push('<span style="color:#f59e0b;font-size:9px">⚠ ASSET</span>');
+      if (v.type==='SIZE') flags.push('<span style="color:#f59e0b;font-size:9px">📏 SIZE</span>');
+    });
+    
+    html += `<tr class="${viol.some(v=>v.severity==='alert')?'ext-row':''}">
+      <td style="color:#94a3b8;white-space:nowrap">${fmtT(t.time)}</td>
+      <td><span class="tag" style="background:#8b5cf620;color:#8b5cf6">${t.type}</span></td>
+      <td style="color:#ef4444">${t.tokenIn||'—'}</td>
+      <td style="color:#22c55e">${t.tokenOut||'—'}</td>
+      <td style="font-variant-numeric:tabular-nums">${t.amtIn?t.amtIn.toFixed(t.amtIn<1?6:2):''}</td>
+      <td style="font-variant-numeric:tabular-nums">${t.amtOut?t.amtOut.toFixed(t.amtOut<1?6:2):''}</td>
+      <td class="${pnlClass(t.pnl)}" style="font-weight:600">${t.pnl!==0?pnlStr(t.pnl):'—'}</td>
+      <td>${flags.join(' ')||'—'}</td>
+      <td><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
+    </tr>`;
+  }
+  html += '</tbody></table></div></div>';
+  $('tab-trades').innerHTML = html;
 }
 
-function renderTxns() {
-  if (!S.txns.length) { document.getElementById('txList').innerHTML='<div style="color:#475569;font-size:12px;text-align:center;padding:20px">No transactions found</div>'; return; }
-  document.getElementById('txList').innerHTML = S.txns.map(tx=>{
-    let badge='';
-    if(tx.cp&&tx.type==='Deposit'){if(tx.isMs) badge='<span style="color:#22c55e;font-size:10px;margin-left:6px">✓ MULTISIG</span>'; else if(tx.isExt) badge='<span style="color:#ef4444;font-size:10px;margin-left:6px">⚠ EXTERNAL</span>';}
-    let am='';
-    if(tx.ud!==0) am+=`<div style="color:${tx.ud>0?'#22c55e':'#ef4444'}">${tx.ud>0?'+':''}${tx.ud.toFixed(2)} USDC</div>`;
-    if(Math.abs(tx.sd)>.0001) am+=`<div style="color:${tx.sd>0?'#22c55e':'#ef4444'};font-size:10px">${tx.sd>0?'+':''}${tx.sd.toFixed(4)} SOL</div>`;
-    return `<div class="txrow"><div class="txl"><span class="txdot" style="background:${tc(tx.type)}"></span><div><div style="color:#e2e8f0">${tx.type}${badge}</div><div style="color:#475569;font-size:10px">${fmtT(tx.time)} · ${ago(tx.time)}</div></div></div><div style="text-align:right">${am}<a href="https://solscan.io/tx/${tx.sig}" target="_blank" style="font-size:9px">${short(tx.sig)} ↗</a></div></div>`;
-  }).join('');
-  if(S.sigCount>S.txns.length){const m=document.getElementById('moreLink');m.classList.remove('hidden');m.innerHTML=`+ ${S.sigCount-S.txns.length} more · <a href="https://solscan.io/account/${W}#txs" target="_blank">View all on Solscan ↗</a>`;}
-  // Table
-  document.getElementById('txTable').innerHTML = S.txns.map(tx=>{
-    const ext=tx.isExt;
-    let src='—'; if(tx.type==='Deposit'&&tx.cp) src=tx.isMs?'<span style="color:#22c55e;font-weight:700">✓ OK</span>':ext?'<span style="color:#ef4444;font-weight:700">⚠ EXT</span>':'<span style="color:#f59e0b">?</span>';
-    return `<tr class="${ext?'ext-row':''}"><td style="color:#94a3b8;white-space:nowrap">${fmtT(tx.time)}</td><td><span class="tag" style="background:${tc(tx.type)}20;color:${tc(tx.type)}">${tx.type}</span></td><td style="color:${tx.sd>0?'#22c55e':tx.sd<0?'#ef4444':'#475569'}">${tx.sd?((tx.sd>0?'+':'')+tx.sd.toFixed(4)):'—'}</td><td style="color:${tx.ud>0?'#22c55e':tx.ud<0?'#ef4444':'#475569'}">${tx.ud?((tx.ud>0?'+':'')+tx.ud.toFixed(2)):'—'}</td><td style="color:${tx.cp&&tx.isMs?'#22c55e':'#94a3b8'}">${tx.cp?short(tx.cp):'—'}</td><td>${src}</td><td><a href="https://solscan.io/tx/${tx.sig}" target="_blank" style="font-size:10px">${short(tx.sig)} ↗</a></td></tr>`;
-  }).join('');
+function renderCompliance() {
+  const counts = { REVENGE:0, CURFEW:0, ASSET:0, SIZE:0, BUDGET:0 };
+  S.violations.forEach(v => counts[v.type] = (counts[v.type]||0) + 1);
+  
+  const rules = [
+    { name: 'Revenge Trading', key: 'REVENGE', icon: '🔥', desc: 'Trading within 10 min of a loss', severity: counts.REVENGE > 0 ? 'alert' : 'ok' },
+    { name: 'Budget Compliance', key: 'BUDGET', icon: '💰', desc: 'Weekly spend within $125 limit', severity: counts.BUDGET > 0 ? 'alert' : 'ok' },
+    { name: 'Position Sizing', key: 'SIZE', icon: '📏', desc: 'Entries within 5% of weekly budget', severity: counts.SIZE > 0 ? 'warn' : 'ok' },
+    { name: 'Approved Assets', key: 'ASSET', icon: '🪙', desc: 'BTC, SOL, ETH perps only', severity: counts.ASSET > 0 ? 'warn' : 'ok' },
+    { name: 'Curfew (Midnight)', key: 'CURFEW', icon: '🌙', desc: 'No trading between 12am–6am', severity: counts.CURFEW > 0 ? 'warn' : 'ok' },
+  ];
+  
+  let html = `<div style="margin-bottom:16px">`;
+  for (const r of rules) {
+    const cls = r.severity === 'alert' ? 'alert' : r.severity === 'warn' ? 'warn' : 'ok';
+    const cnt = counts[r.key] || 0;
+    const statusIcon = cnt === 0 ? '<span style="color:#22c55e;font-weight:700">✓ PASS</span>' : `<span style="color:${r.severity==='alert'?'#ef4444':'#f59e0b'};font-weight:700">${cnt} violation${cnt>1?'s':''}</span>`;
+    html += `<div class="rule ${cls}">
+      <span style="font-size:20px;width:32px;text-align:center">${r.icon}</span>
+      <div style="flex:1"><div style="font-size:12px;color:#e2e8f0;font-weight:600">${r.name}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${r.desc}</div></div>
+      <div>${statusIcon}</div>
+    </div>`;
+  }
+  html += '</div>';
+  
+  // Violation log
+  if (S.violations.length) {
+    html += `<div class="panel"><div class="pl">Violation Log (${S.violations.length} total)</div>`;
+    html += `<div style="max-height:400px;overflow-y:auto">`;
+    for (const v of S.violations.slice(0, 50)) {
+      const colors = { alert:'#ef4444', warn:'#f59e0b', info:'#3b82f6' };
+      html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:flex-start">
+        <span class="tag" style="background:${colors[v.severity]}20;color:${colors[v.severity]};min-width:60px;text-align:center">${v.type}</span>
+        <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time?`<div style="color:#475569;font-size:9px;margin-top:2px">${fmtT(v.time)} · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a></div>`:''}</div>
+      </div>`;
+    }
+    html += '</div></div>';
+  } else {
+    html += '<div class="panel" style="text-align:center;color:#22c55e;padding:20px">✓ No violations detected</div>';
+  }
+  
+  $('tab-compliance').innerHTML = html;
 }
 
-function renderAlerts() {
-  const b=document.getElementById('alertBadge'),n=document.getElementById('alertBanner');
-  if(S.alerts.length>0){b.classList.remove('hidden');b.textContent='⚠ '+S.alerts.length+' ALERT'+(S.alerts.length>1?'S':'');n.classList.remove('hidden');document.getElementById('alertDetails').innerHTML=S.alerts.map(a=>`<div><span style="color:#f87171;font-weight:600">${a.amt}</span> from <span style="color:#fbbf24">${short(a.from)}</span> — ${ago(a.time)}</div>`).join('');}
-  else{b.classList.add('hidden');n.classList.add('hidden');}
+function renderWeekly() {
+  if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
+  
+  let html = `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
+    <th>Week</th><th>Trades</th><th>Volume</th><th>P&L</th><th>Win Rate</th><th>Budget Status</th>
+  </tr></thead><tbody>`;
+  
+  for (const w of S.weeklyData) {
+    const wr = w.count > 0 ? (w.wins/w.count*100) : 0;
+    const overBudget = w.volume > BUDGET_WEEKLY;
+    html += `<tr class="${overBudget?'ext-row':''}">
+      <td style="color:#94a3b8;white-space:nowrap">${w.key}</td>
+      <td>${w.count}</td>
+      <td style="font-variant-numeric:tabular-nums">$${w.volume.toFixed(2)}</td>
+      <td class="${pnlClass(w.totalPnl)}" style="font-weight:600">${pnlStr(w.totalPnl)}</td>
+      <td style="color:${wr>=50?'#22c55e':'#ef4444'}">${wr.toFixed(0)}%</td>
+      <td>${overBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+(w.volume-BUDGET_WEEKLY).toFixed(2)+')</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table></div></div>';
+  
+  // Weekly P&L chart
+  if (S.weeklyData.length > 1) {
+    const maxPnl = Math.max(...S.weeklyData.map(w => Math.abs(w.totalPnl)), 1);
+    html += `<div class="panel"><div class="pl">Weekly P&L</div><div style="display:flex;align-items:center;gap:3px;height:80px;padding-top:40px;position:relative">`;
+    html += `<div style="position:absolute;top:39px;left:0;right:0;border-top:1px dashed #475569"></div>`;
+    for (const w of [...S.weeklyData].reverse()) {
+      const ht = Math.max(4, (Math.abs(w.totalPnl)/maxPnl)*38);
+      const isWin = w.totalPnl >= 0;
+      html += `<div title="${w.key}: ${pnlStr(w.totalPnl)}" style="flex:1;height:${ht}px;background:${isWin?'#22c55e':'#ef4444'};border-radius:2px;${isWin?'align-self:flex-start;margin-top:'+(40-ht)+'px':'align-self:flex-end;margin-top:40px'}"></div>`;
+    }
+    html += `</div><div style="display:flex;justify-content:space-between;font-size:8px;color:#475569;margin-top:4px"><span>${S.weeklyData[S.weeklyData.length-1]?.key||''}</span><span>${S.weeklyData[0]?.key||''}</span></div></div>`;
+  }
+  
+  $('tab-weekly').innerHTML = html;
 }
 
 function renderRules() {
-  const rs=[{r:'Weekly budget',v:'$125 USDC released every Monday',c:'💰'},{r:'Max entry',v:'5% of weekly (~$6.25). Start at 1%',c:'📏'},{r:'Leverage',v:'200x — liquidation = stop loss',c:'⚡'},{r:'Positions',v:'6 max (3L/3S). BTC, SOL, ETH perps only',c:'📊'},{r:'Cooldown',v:'Budget blown → wait till next Monday',c:'⏸'},{r:'Curfew',v:'In bed by midnight',c:'🌙'},{r:'Post-loss',v:'Message Ken before resuming after blown week',c:'💬'},{r:'Escalation',v:'External reload → Ken notifies Queenie',c:'🚨',a:1},{r:'The goal',v:'Get bored. Make it feel like work.',c:'🎯'}];
-  document.getElementById('rulesList').innerHTML=rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('');
+  const rs = [
+    {r:'Weekly budget',v:'$125 USDC released every Monday',c:'💰'},
+    {r:'Max entry',v:'5% of weekly (~$6.25). Start at 1%',c:'📏'},
+    {r:'Leverage',v:'200x — liquidation = stop loss',c:'⚡'},
+    {r:'Positions',v:'6 max (3L/3S). BTC, SOL, ETH perps only',c:'📊'},
+    {r:'Cooldown',v:'Budget blown → wait till next Monday',c:'⏸'},
+    {r:'Curfew',v:'In bed by midnight',c:'🌙'},
+    {r:'Post-loss',v:'Message Ken before resuming after blown week',c:'💬'},
+    {r:'Escalation',v:'External reload → Ken notifies Queenie',c:'🚨',a:1},
+    {r:'The goal',v:'Get bored. Make it feel like work.',c:'🎯'},
+  ];
+  $('tab-rules').innerHTML = rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('') + '<div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div>';
 }
 
-function setPhase(p) {
-  const b=document.getElementById('progBar'),w=document.getElementById('progWrap'),btn=document.getElementById('refreshBtn');
-  const pcts={balances:'20%',tokens:'40%',history:'60%',details:'85%'};
-  const labs={balances:'Fetching balances…',tokens:'Checking tokens…',history:'Loading history…',details:'Parsing txns…'};
-  if(p==='done'||p==='error'){w.classList.add('hidden');btn.disabled=false;btn.textContent='↻ Refresh';}
-  else{w.classList.remove('hidden');b.style.width=pcts[p]||'50%';btn.disabled=true;btn.textContent=labs[p]||'Loading…';}
-}
-
-async function fetchAll() {
-  document.getElementById('errBar').classList.add('hidden');
-  activeRpc=null; setPhase('balances');
-  try {
-    const b=await rpc("getBalance",[W]); S.sol=b.value/1e9; renderCards();
-    document.getElementById('setupBox').classList.add('hidden'); // hide setup once connected
-    document.getElementById('rpcLabel').textContent='RPC: '+(activeRpc||'').replace(/https?:\/\//,'').split('/')[0].split('?')[0];
-    await sleep(500); setPhase('tokens');
-    try{const tk=await rpc("getTokenAccountsByOwner",[W,{mint:USDC},{encoding:"jsonParsed"}]);S.usdc=tk.value.length>0?tk.value[0].account.data.parsed.info.tokenAmount.uiAmount:0;}catch{S.usdc=0;}
-    renderCards();renderGauge();
-    await sleep(500); setPhase('history');
-    const sigs=await rpc("getSignaturesForAddress",[W,{limit:10}]); S.sigCount=sigs.length; renderCards();
-    setPhase('details'); S.txns=[]; S.alerts=[];
-    for(let i=0;i<Math.min(5,sigs.length);i++){
-      await sleep(700);
-      try{
-        const tx=await rpc("getTransaction",[sigs[i].signature,{encoding:"jsonParsed",maxSupportedTransactionVersion:0}]);
-        if(!tx)continue;
-        const ak=(tx.transaction?.message?.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey);
-        const wi=ak.indexOf(W);
-        const sd=wi>=0?((tx.meta?.postBalances||[])[wi]-(tx.meta?.preBalances||[])[wi])/1e9:0;
-        const preU=(tx.meta?.preTokenBalances||[]).find(t=>t.mint===USDC&&t.owner===W);
-        const postU=(tx.meta?.postTokenBalances||[]).find(t=>t.mint===USDC&&t.owner===W);
-        const ud=(postU?.uiTokenAmount?.uiAmount||0)-(preU?.uiTokenAmount?.uiAmount||0);
-        const progs=(tx.transaction?.message?.instructions||[]).map(x=>x.programId||x.program||'');
-        const jup=progs.some(p=>p.includes('JUP'));
-        let type='Interaction',cp=null;
-        if(jup)type='Jupiter Swap';
-        else if(sd>.001||ud>.01){type='Deposit';cp=ak.find(k=>k!==W&&k!=='11111111111111111111111111111111'&&k!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');}
-        else if(sd<-.001||ud<-.01)type='Withdrawal';
-        const isMs=cp===MS,isExt=type==='Deposit'&&cp&&!isMs&&(sd>.01||ud>1);
-        S.txns.push({sig:sigs[i].signature,time:tx.blockTime,type,sd:Math.round(sd*1e6)/1e6,ud:Math.round(ud*1e4)/1e4,cp,isMs,isExt});
-        if(isExt)S.alerts.push({sig:sigs[i].signature,time:tx.blockTime,from:cp,amt:ud>0?ud.toFixed(2)+' USDC':sd.toFixed(4)+' SOL'});
-        renderTxns();renderAlerts();renderCards();
-      }catch{S.txns.push({sig:sigs[i].signature,time:sigs[i].blockTime,type:'Pending',sd:0,ud:0,cp:null,isMs:false,isExt:false});renderTxns();}
-    }
-    document.getElementById('updatedAt').textContent='Updated: '+new Date().toLocaleTimeString();
-    setPhase('done');
-  }catch(e){
-    document.getElementById('errBar').classList.remove('hidden');
-    document.getElementById('errMsg').textContent=e.message;
-    document.getElementById('setupBox').classList.remove('hidden');
-    setPhase('error');
+function renderAlerts() {
+  const critical = S.violations.filter(v => v.severity === 'alert');
+  if (critical.length) {
+    $('aBadge').classList.remove('hidden');
+    $('aBadge').textContent = '⚠ ' + critical.length + ' ALERT' + (critical.length>1?'S':'');
+    $('aBanner').classList.remove('hidden');
+    $('aDetails').innerHTML = critical.slice(0,5).map(v => `<div style="margin-bottom:4px">• <strong>${v.type}</strong>: ${v.detail}</div>`).join('');
+  } else {
+    $('aBadge').classList.add('hidden');
+    $('aBanner').classList.add('hidden');
   }
 }
 
-// Init
-document.getElementById('heliusKey').value = loadKey();
-renderCards(); renderRules();
-fetchAll();
+// ─── Main ───
+async function init() {
+  $('errBar').classList.add('hidden');
+  $('pWrap').classList.remove('hidden');
+  $('rBtn').disabled = true;
+  $('pBar').style.width = '10%';
+  
+  try {
+    // Balances
+    setStatus('Fetching balances…');
+    const bal = await rpc("getBalance", [W]);
+    S.sol = bal.value / 1e9;
+    $('pBar').style.width = '15%';
+    await sleep(300);
+    
+    try {
+      const tk = await rpc("getTokenAccountsByOwner", [W, {mint:USDC_MINT}, {encoding:"jsonParsed"}]);
+      S.usdc = tk.value.length > 0 ? tk.value[0].account.data.parsed.info.tokenAmount.uiAmount : 0;
+    } catch { S.usdc = 0; }
+    
+    // Fetch all transactions via Helius enhanced API
+    S.allTxns = await fetchAllTrades();
+    $('txCount').textContent = S.allTxns.length + ' txns loaded';
+    
+    // Parse Jupiter trades
+    setStatus('Analyzing trades…');
+    $('pBar').style.width = '92%';
+    S.trades = parseTrades(S.allTxns);
+    
+    // Compliance check
+    setStatus('Checking compliance…');
+    S.violations = checkCompliance(S.trades);
+    
+    // Weekly aggregation
+    S.weeklyData = aggregateWeekly(S.trades);
+    
+    // Render everything
+    $('pBar').style.width = '100%';
+    setStatus('Done');
+    renderOverview();
+    renderTrades();
+    renderCompliance();
+    renderWeekly();
+    renderRules();
+    renderAlerts();
+    
+    $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> connected via Helius';
+    $('updAt').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+    
+  } catch(e) {
+    $('errBar').classList.remove('hidden');
+    $('errMsg').textContent = e.message;
+    $('statusDot').innerHTML = '<span style="color:#ef4444">●</span> error';
+  }
+  
+  $('pWrap').classList.add('hidden');
+  $('rBtn').disabled = false;
+  $('rBtn').textContent = '↻ Refresh';
+}
+
+renderRules();
+init();
 </script>
 </body>
 </html>
