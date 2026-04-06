@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alvin Trading Monitor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'JetBrains Mono',monospace;background:#0a0e17;color:#c8d6e5;min-height:100vh}
+  a{color:#3b82f6;text-decoration:none} a:hover{text-decoration:underline}
+  .header{background:linear-gradient(135deg,#0f1923,#1a1f35);border-bottom:1px solid #1e293b;padding:20px 24px}
+  .header-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+  .tsub{font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px}
+  .tmain{font-size:20px;font-weight:700;color:#e2e8f0} .tmain span{color:#f59e0b}
+  .meta{font-size:10px;color:#475569;margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+  .btn{border:1px solid #3b82f6;color:#93c5fd;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;background:#1e40af}
+  .btn:disabled{background:#1e293b;cursor:wait}
+  .btn-sm{background:#dc2626;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit}
+  .alert-badge{background:#dc262620;border:1px solid #dc2626;border-radius:6px;padding:6px 12px;font-size:12px;color:#ef4444;font-weight:700;animation:pulse 2s infinite}
+  .progress{margin-top:10px;height:3px;background:#1e293b;border-radius:2px;overflow:hidden}
+  .pbar{height:100%;background:#f59e0b;border-radius:2px;transition:width .5s ease}
+  .errbar{margin:12px 24px 0;padding:12px;background:#dc262615;border:1px solid #dc262650;border-radius:8px;color:#fca5a5;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+  .abanner{margin:12px 24px 0;padding:16px;background:#dc262612;border:1px solid #dc2626;border-radius:8px}
+  .tabs{display:flex;gap:0;margin:12px 24px 0;border-bottom:1px solid #1e293b}
+  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:#64748b;padding:10px 20px;cursor:pointer;font-size:12px;font-family:inherit;text-transform:uppercase;letter-spacing:1px}
+  .tab.active{background:#1e293b;border-bottom-color:#f59e0b;color:#f59e0b;font-weight:700}
+  .content{padding:16px 24px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:#111827;border-radius:8px;padding:16px;position:relative;overflow:hidden}
+  .cstripe{position:absolute;top:0;left:0;width:3px;height:100%}
+  .clabel{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .cval{font-size:22px;font-weight:700} .cunit{font-size:10px;color:#475569;margin-top:2px}
+  .panel{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:16px;margin-bottom:20px}
+  .plabel{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+  .gtrack{height:8px;background:#1e293b;border-radius:4px;overflow:hidden;margin-bottom:8px}
+  .gfill{height:100%;border-radius:4px;transition:width .5s ease}
+  .glabels{display:flex;justify-content:space-between;font-size:11px}
+  .txrow{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #1e293b;font-size:12px}
+  .txrow:last-child{border-bottom:none}
+  .txdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .txl{display:flex;align-items:center;gap:10px}
+  .rule{background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:14px;margin-bottom:10px}
+  .rule.alert{background:#dc262610;border-color:#dc2626}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{padding:10px 12px;text-align:left;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;background:#1e293b}
+  td{padding:10px 12px;border-bottom:1px solid #1e293b}
+  .ext-row{background:#dc262610}
+  .hidden{display:none}
+  .tag{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+  .setup-box{margin:12px 24px 0;padding:16px;background:#111827;border:1px solid #f59e0b50;border-radius:8px}
+  .setup-box input{background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px 12px;border-radius:4px;font-family:inherit;font-size:12px;width:100%;margin-top:8px}
+  .setup-box input:focus{outline:none;border-color:#f59e0b}
+  .footer{padding:16px 24px;border-top:1px solid #1e293b;font-size:10px;color:#374151;text-align:center}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  ::-webkit-scrollbar{height:6px} ::-webkit-scrollbar-track{background:#1e293b} ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="tsub">Risk Management Console</div>
+      <div class="tmain">Alvin <span>Trading Monitor</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div id="alertBadge" class="alert-badge hidden">⚠ ALERT</div>
+      <button class="btn" id="refreshBtn" onclick="fetchAll()">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="meta">
+    <span>Wallet: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt" target="_blank">6gYe..yqQt ↗</a></span>
+    <span>Multisig: <a href="https://solscan.io/account/Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ" target="_blank">Grtr..GXSZ ↗</a></span>
+    <span id="rpcLabel" style="color:#f59e0b"></span>
+    <span id="updatedAt"></span>
+  </div>
+  <div class="progress hidden" id="progWrap"><div class="pbar" id="progBar"></div></div>
+</div>
+
+<!-- RPC Setup -->
+<div class="setup-box" id="setupBox">
+  <div style="font-size:13px;color:#f59e0b;font-weight:700;margin-bottom:6px">⚡ RPC Configuration</div>
+  <div style="font-size:11px;color:#94a3b8;line-height:1.6">
+    Public RPCs can be unreliable. For guaranteed access, get a <strong>free</strong> Helius API key at
+    <a href="https://helius.dev" target="_blank">helius.dev</a> (takes 30 seconds, 100k requests/day free), then paste it below:
+  </div>
+  <input type="text" id="heliusKey" placeholder="Paste Helius API key here (optional — will try public RPCs first)" oninput="saveKey(this.value)">
+  <div style="font-size:10px;color:#475569;margin-top:6px">Key is stored in your browser only (localStorage). Leave blank to use public endpoints.</div>
+</div>
+
+<div id="errBar" class="errbar hidden"><span id="errMsg"></span><button class="btn-sm" onclick="fetchAll()">Retry</button></div>
+<div id="alertBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 NON-MULTISIG DEPOSIT DETECTED</div><div id="alertDetails" style="font-size:12px;color:#fca5a5"></div><div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:6px">ESCALATION TRIGGER — Per agreement, Ken may notify Queenie</div></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('overview',this)">Overview</button>
+  <button class="tab" onclick="switchTab('transactions',this)">Transactions</button>
+  <button class="tab" onclick="switchTab('rules',this)">Rules</button>
+</div>
+
+<div class="content">
+  <div id="tab-overview">
+    <div class="cards" id="cardsGrid"></div>
+    <div class="panel hidden" id="gaugePanel"><div class="plabel">Budget Utilization</div><div class="gtrack"><div class="gfill" id="gaugeFill"></div></div><div class="glabels"><span id="gL" style="color:#94a3b8"></span><span id="gR"></span></div></div>
+    <div class="panel"><div class="plabel">Parsed Transactions</div><div id="txList"><div style="color:#475569;font-size:12px;text-align:center;padding:20px">Click Refresh to load…</div></div><div class="hidden" id="moreLink" style="margin-top:12px;padding:8px;background:#1e293b;border-radius:6px;font-size:11px;color:#64748b;text-align:center"></div></div>
+  </div>
+  <div id="tab-transactions" class="hidden"><div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Type</th><th>SOL Δ</th><th>USDC Δ</th><th>Counterparty</th><th>Source</th><th>Sig</th></tr></thead><tbody id="txTable"><tr><td colspan="7" style="text-align:center;color:#475569;padding:30px">Click Refresh</td></tr></tbody></table></div><div style="padding:12px;border-top:1px solid #1e293b;text-align:center;font-size:11px;color:#475569">Full history: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt#txs" target="_blank">Solscan ↗</a></div></div></div>
+  <div id="tab-rules" class="hidden"><div id="rulesList"></div><div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div></div>
+</div>
+
+<div class="footer">Trial: May 5 – Aug 3, 2026 · Download and open this file in your browser for live blockchain data</div>
+
+<script>
+const W = "6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt";
+const MS = "Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ";
+const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const BUDGET = 125;
+
+const PUBLIC_RPCS = [
+  "https://rpc.ankr.com/solana",
+  "https://solana-rpc.publicnode.com",
+  "https://api.mainnet-beta.solana.com",
+];
+
+function heliusRpc() {
+  const k = (document.getElementById('heliusKey')?.value || '').trim();
+  return k ? `https://mainnet.helius-rpc.com/?api-key=${k}` : null;
+}
+
+function saveKey(v) { try { localStorage.setItem('helius_key', v.trim()); } catch {} }
+function loadKey() { try { return localStorage.getItem('helius_key') || ''; } catch { return ''; } }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
+
+let activeRpc = null;
+
+async function rpc(method, params) {
+  // Build endpoint list: Helius first (if key provided), then publics
+  const endpoints = [];
+  const h = heliusRpc();
+  if (h) endpoints.push(h);
+  endpoints.push(...PUBLIC_RPCS);
+
+  for (let i = 0; i < endpoints.length; i++) {
+    for (let retry = 0; retry < 2; retry++) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        const r = await fetch(endpoints[i], {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+        activeRpc = endpoints[i];
+        return d.result;
+      } catch (e) {
+        if (retry === 0) await sleep(1000);
+      }
+    }
+  }
+  throw new Error("All RPC endpoints failed. Paste a free Helius API key above for reliable access.");
+}
+
+function switchTab(n, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('hidden'));
+  document.getElementById('tab-'+n).classList.remove('hidden');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function fmtT(ts) { if (!ts) return '—'; return new Date(ts*1000).toLocaleDateString('en-AU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function ago(ts) { if (!ts) return ''; const d=Date.now()/1000-ts; if(d<60) return 'now'; if(d<3600) return Math.floor(d/60)+'m'; if(d<86400) return Math.floor(d/3600)+'h'; return Math.floor(d/86400)+'d'; }
+function tc(t) { return t==='Deposit'?'#22c55e':t==='Jupiter Swap'?'#8b5cf6':t==='Withdrawal'?'#f59e0b':'#64748b'; }
+
+let S = { sol:null, usdc:null, txns:[], alerts:[], sigCount:0 };
+
+function renderCards() {
+  const cs = [
+    {l:'SOL Balance',v:S.sol!==null?S.sol.toFixed(4):'…',u:'SOL',c:'#9945ff'},
+    {l:'USDC Balance',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'USDC',c:'#2775ca'},
+    {l:'Weekly Budget',v:'$'+BUDGET,u:'USDC / week',c:'#f59e0b'},
+    {l:'Recent Txns',v:S.sigCount,u:'last 10',c:'#10b981'},
+    {l:'Alerts',v:S.alerts.length,u:S.alerts.length>0?'ACTION':'clear',c:S.alerts.length>0?'#ef4444':'#22c55e'},
+  ];
+  document.getElementById('cardsGrid').innerHTML = cs.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cstripe" style="background:${c.c}"></div><div class="clabel">${c.l}</div><div class="cval" style="color:${c.c}">${c.v}</div><div class="cunit">${c.u}</div></div>`).join('');
+}
+
+function renderGauge() {
+  if (S.usdc===null) { document.getElementById('gaugePanel').classList.add('hidden'); return; }
+  document.getElementById('gaugePanel').classList.remove('hidden');
+  const p=Math.min(100,(S.usdc/BUDGET)*100), o=S.usdc>BUDGET;
+  document.getElementById('gaugeFill').style.width=p+'%';
+  document.getElementById('gaugeFill').style.background=o?'#ef4444':S.usdc>BUDGET*.5?'#f59e0b':'#22c55e';
+  document.getElementById('gL').textContent='$'+S.usdc.toFixed(2)+' in wallet';
+  const r=document.getElementById('gR'); r.textContent=o?'⚠ $'+(S.usdc-BUDGET).toFixed(2)+' OVER':'$'+(BUDGET-S.usdc).toFixed(2)+' remaining'; r.style.color=o?'#ef4444':'#64748b';
+}
+
+function renderTxns() {
+  if (!S.txns.length) { document.getElementById('txList').innerHTML='<div style="color:#475569;font-size:12px;text-align:center;padding:20px">No transactions found</div>'; return; }
+  document.getElementById('txList').innerHTML = S.txns.map(tx=>{
+    let badge='';
+    if(tx.cp&&tx.type==='Deposit'){if(tx.isMs) badge='<span style="color:#22c55e;font-size:10px;margin-left:6px">✓ MULTISIG</span>'; else if(tx.isExt) badge='<span style="color:#ef4444;font-size:10px;margin-left:6px">⚠ EXTERNAL</span>';}
+    let am='';
+    if(tx.ud!==0) am+=`<div style="color:${tx.ud>0?'#22c55e':'#ef4444'}">${tx.ud>0?'+':''}${tx.ud.toFixed(2)} USDC</div>`;
+    if(Math.abs(tx.sd)>.0001) am+=`<div style="color:${tx.sd>0?'#22c55e':'#ef4444'};font-size:10px">${tx.sd>0?'+':''}${tx.sd.toFixed(4)} SOL</div>`;
+    return `<div class="txrow"><div class="txl"><span class="txdot" style="background:${tc(tx.type)}"></span><div><div style="color:#e2e8f0">${tx.type}${badge}</div><div style="color:#475569;font-size:10px">${fmtT(tx.time)} · ${ago(tx.time)}</div></div></div><div style="text-align:right">${am}<a href="https://solscan.io/tx/${tx.sig}" target="_blank" style="font-size:9px">${short(tx.sig)} ↗</a></div></div>`;
+  }).join('');
+  if(S.sigCount>S.txns.length){const m=document.getElementById('moreLink');m.classList.remove('hidden');m.innerHTML=`+ ${S.sigCount-S.txns.length} more · <a href="https://solscan.io/account/${W}#txs" target="_blank">View all on Solscan ↗</a>`;}
+  // Table
+  document.getElementById('txTable').innerHTML = S.txns.map(tx=>{
+    const ext=tx.isExt;
+    let src='—'; if(tx.type==='Deposit'&&tx.cp) src=tx.isMs?'<span style="color:#22c55e;font-weight:700">✓ OK</span>':ext?'<span style="color:#ef4444;font-weight:700">⚠ EXT</span>':'<span style="color:#f59e0b">?</span>';
+    return `<tr class="${ext?'ext-row':''}"><td style="color:#94a3b8;white-space:nowrap">${fmtT(tx.time)}</td><td><span class="tag" style="background:${tc(tx.type)}20;color:${tc(tx.type)}">${tx.type}</span></td><td style="color:${tx.sd>0?'#22c55e':tx.sd<0?'#ef4444':'#475569'}">${tx.sd?((tx.sd>0?'+':'')+tx.sd.toFixed(4)):'—'}</td><td style="color:${tx.ud>0?'#22c55e':tx.ud<0?'#ef4444':'#475569'}">${tx.ud?((tx.ud>0?'+':'')+tx.ud.toFixed(2)):'—'}</td><td style="color:${tx.cp&&tx.isMs?'#22c55e':'#94a3b8'}">${tx.cp?short(tx.cp):'—'}</td><td>${src}</td><td><a href="https://solscan.io/tx/${tx.sig}" target="_blank" style="font-size:10px">${short(tx.sig)} ↗</a></td></tr>`;
+  }).join('');
+}
+
+function renderAlerts() {
+  const b=document.getElementById('alertBadge'),n=document.getElementById('alertBanner');
+  if(S.alerts.length>0){b.classList.remove('hidden');b.textContent='⚠ '+S.alerts.length+' ALERT'+(S.alerts.length>1?'S':'');n.classList.remove('hidden');document.getElementById('alertDetails').innerHTML=S.alerts.map(a=>`<div><span style="color:#f87171;font-weight:600">${a.amt}</span> from <span style="color:#fbbf24">${short(a.from)}</span> — ${ago(a.time)}</div>`).join('');}
+  else{b.classList.add('hidden');n.classList.add('hidden');}
+}
+
+function renderRules() {
+  const rs=[{r:'Weekly budget',v:'$125 USDC released every Monday',c:'💰'},{r:'Max entry',v:'5% of weekly (~$6.25). Start at 1%',c:'📏'},{r:'Leverage',v:'200x — liquidation = stop loss',c:'⚡'},{r:'Positions',v:'6 max (3L/3S). BTC, SOL, ETH perps only',c:'📊'},{r:'Cooldown',v:'Budget blown → wait till next Monday',c:'⏸'},{r:'Curfew',v:'In bed by midnight',c:'🌙'},{r:'Post-loss',v:'Message Ken before resuming after blown week',c:'💬'},{r:'Escalation',v:'External reload → Ken notifies Queenie',c:'🚨',a:1},{r:'The goal',v:'Get bored. Make it feel like work.',c:'🎯'}];
+  document.getElementById('rulesList').innerHTML=rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('');
+}
+
+function setPhase(p) {
+  const b=document.getElementById('progBar'),w=document.getElementById('progWrap'),btn=document.getElementById('refreshBtn');
+  const pcts={balances:'20%',tokens:'40%',history:'60%',details:'85%'};
+  const labs={balances:'Fetching balances…',tokens:'Checking tokens…',history:'Loading history…',details:'Parsing txns…'};
+  if(p==='done'||p==='error'){w.classList.add('hidden');btn.disabled=false;btn.textContent='↻ Refresh';}
+  else{w.classList.remove('hidden');b.style.width=pcts[p]||'50%';btn.disabled=true;btn.textContent=labs[p]||'Loading…';}
+}
+
+async function fetchAll() {
+  document.getElementById('errBar').classList.add('hidden');
+  activeRpc=null; setPhase('balances');
+  try {
+    const b=await rpc("getBalance",[W]); S.sol=b.value/1e9; renderCards();
+    document.getElementById('setupBox').classList.add('hidden'); // hide setup once connected
+    document.getElementById('rpcLabel').textContent='RPC: '+(activeRpc||'').replace(/https?:\/\//,'').split('/')[0].split('?')[0];
+    await sleep(500); setPhase('tokens');
+    try{const tk=await rpc("getTokenAccountsByOwner",[W,{mint:USDC},{encoding:"jsonParsed"}]);S.usdc=tk.value.length>0?tk.value[0].account.data.parsed.info.tokenAmount.uiAmount:0;}catch{S.usdc=0;}
+    renderCards();renderGauge();
+    await sleep(500); setPhase('history');
+    const sigs=await rpc("getSignaturesForAddress",[W,{limit:10}]); S.sigCount=sigs.length; renderCards();
+    setPhase('details'); S.txns=[]; S.alerts=[];
+    for(let i=0;i<Math.min(5,sigs.length);i++){
+      await sleep(700);
+      try{
+        const tx=await rpc("getTransaction",[sigs[i].signature,{encoding:"jsonParsed",maxSupportedTransactionVersion:0}]);
+        if(!tx)continue;
+        const ak=(tx.transaction?.message?.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey);
+        const wi=ak.indexOf(W);
+        const sd=wi>=0?((tx.meta?.postBalances||[])[wi]-(tx.meta?.preBalances||[])[wi])/1e9:0;
+        const preU=(tx.meta?.preTokenBalances||[]).find(t=>t.mint===USDC&&t.owner===W);
+        const postU=(tx.meta?.postTokenBalances||[]).find(t=>t.mint===USDC&&t.owner===W);
+        const ud=(postU?.uiTokenAmount?.uiAmount||0)-(preU?.uiTokenAmount?.uiAmount||0);
+        const progs=(tx.transaction?.message?.instructions||[]).map(x=>x.programId||x.program||'');
+        const jup=progs.some(p=>p.includes('JUP'));
+        let type='Interaction',cp=null;
+        if(jup)type='Jupiter Swap';
+        else if(sd>.001||ud>.01){type='Deposit';cp=ak.find(k=>k!==W&&k!=='11111111111111111111111111111111'&&k!=='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');}
+        else if(sd<-.001||ud<-.01)type='Withdrawal';
+        const isMs=cp===MS,isExt=type==='Deposit'&&cp&&!isMs&&(sd>.01||ud>1);
+        S.txns.push({sig:sigs[i].signature,time:tx.blockTime,type,sd:Math.round(sd*1e6)/1e6,ud:Math.round(ud*1e4)/1e4,cp,isMs,isExt});
+        if(isExt)S.alerts.push({sig:sigs[i].signature,time:tx.blockTime,from:cp,amt:ud>0?ud.toFixed(2)+' USDC':sd.toFixed(4)+' SOL'});
+        renderTxns();renderAlerts();renderCards();
+      }catch{S.txns.push({sig:sigs[i].signature,time:sigs[i].blockTime,type:'Pending',sd:0,ud:0,cp:null,isMs:false,isExt:false});renderTxns();}
+    }
+    document.getElementById('updatedAt').textContent='Updated: '+new Date().toLocaleTimeString();
+    setPhase('done');
+  }catch(e){
+    document.getElementById('errBar').classList.remove('hidden');
+    document.getElementById('errMsg').textContent=e.message;
+    document.getElementById('setupBox').classList.remove('hidden');
+    setPhase('error');
+  }
+}
+
+// Init
+document.getElementById('heliusKey').value = loadKey();
+renderCards(); renderRules();
+fetchAll();
+</script>
+</body>
+</html>
