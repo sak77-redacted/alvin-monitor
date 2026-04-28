@@ -107,6 +107,7 @@ const HELIUS = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
 const HELIUS_API = `https://api-mainnet.helius-rpc.com/v0/addresses/${W}/transactions?api-key=${HELIUS_KEY}`;
 const BUDGET_WEEKLY = 125;
 const BUDGET_MONTHLY = 500;
+const TRACKING_START = new Date('2026-04-28T00:00:00').getTime() / 1000; // tracking start (local), pre-existing activity excluded
 const MAX_POS_PCT = 0.05;
 const ALLOWED_ASSETS = ['SOL','BTC','ETH','USDC','wBTC','WBTC','mSOL','JitoSOL','USDT'];
 const CURFEW_HOUR = 0; // midnight AEST (UTC+10/11)
@@ -116,6 +117,27 @@ const $ = id => document.getElementById(id);
 
 // ─── State ───
 let S = { sol:null, usdc:null, solPrice:null, trades:[], allTxns:[], violations:[], weeklyData:[] };
+
+// ─── Approvals (localStorage, keyed by type+sig+time) ───
+function violationKey(v) { return `${v.type}|${v.sig||''}|${v.time||0}`; }
+function loadApprovals() {
+  try { return new Set(JSON.parse(localStorage.getItem('alvin_approvals') || '[]')); }
+  catch { return new Set(); }
+}
+function saveApprovals(set) {
+  try { localStorage.setItem('alvin_approvals', JSON.stringify([...set])); } catch {}
+}
+function refreshApprovalState() {
+  const a = loadApprovals();
+  S.violations.forEach(v => v.approved = a.has(violationKey(v)));
+}
+function toggleApproval(key) {
+  const a = loadApprovals();
+  if (a.has(key)) a.delete(key); else a.add(key);
+  saveApprovals(a);
+  refreshApprovalState();
+  renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts();
+}
 
 // ─── SOL price (CoinGecko, no key) ───
 async function fetchSolPrice() {
@@ -269,7 +291,7 @@ function checkCompliance(trades) {
   
   for (const [wk, data] of Object.entries(weeks)) {
     if (data.spent > BUDGET_WEEKLY * 1.5) {
-      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: '', detail: `Week of ${wk}: $${data.spent.toFixed(2)} spent (budget: $${BUDGET_WEEKLY})` });
+      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: 'budget:' + wk, detail: `Week of ${wk}: $${data.spent.toFixed(2)} spent (budget: $${BUDGET_WEEKLY})` });
     }
   }
   
@@ -314,8 +336,8 @@ function renderOverview() {
   const winRate = S.trades.length > 0 ? (wins / S.trades.length * 100) : 0;
   const totalVol = S.trades.reduce((s,t) => s + t.usdcIn, 0);
   const avgTrade = S.trades.length > 0 ? totalVol / S.trades.length : 0;
-  const alerts = S.violations.filter(v => v.severity === 'alert').length;
-  const warns = S.violations.filter(v => v.severity === 'warn').length;
+  const alerts = S.violations.filter(v => v.severity === 'alert' && !v.approved).length;
+  const warns = S.violations.filter(v => v.severity === 'warn' && !v.approved).length;
   
   const cards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
@@ -337,11 +359,13 @@ function renderOverview() {
   let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:32px;font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px">${breakdown}</div></div>`;
   html += `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
   
-  // Budget gauge
-  if (S.usdc !== null) {
-    const pct=Math.min(100,(S.usdc/BUDGET_WEEKLY)*100), over=S.usdc>BUDGET_WEEKLY;
-    const gc = over?'#ef4444':S.usdc>BUDGET_WEEKLY*.5?'#f59e0b':'#22c55e';
-    html += `<div class="panel"><div class="pl">Budget: $${S.usdc.toFixed(2)} / $${BUDGET_WEEKLY} weekly</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${S.usdc.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(S.usdc-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-S.usdc).toFixed(2)+' remaining'}</span></div></div>`;
+  // Budget gauge — driven by total wallet USD (SOL + USDC)
+  if (haveBalances) {
+    const wallet = totalUsd;
+    const pct = Math.min(100, (wallet/BUDGET_WEEKLY)*100), over = wallet > BUDGET_WEEKLY;
+    const gc = over ? '#ef4444' : wallet > BUDGET_WEEKLY*.5 ? '#f59e0b' : '#22c55e';
+    const trackLabel = new Date(TRACKING_START*1000).toLocaleDateString('en-AU',{day:'2-digit',month:'short'});
+    html += `<div class="panel"><div class="pl">Budget: $${wallet.toFixed(2)} / $${BUDGET_WEEKLY} weekly · tracking from ${trackLabel}</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${wallet.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(wallet-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-wallet).toFixed(2)+' remaining'}</span></div></div>`;
   }
   
   // Recent trades
@@ -404,12 +428,13 @@ function renderTrades() {
 }
 
 function renderCompliance() {
-  const counts = { REVENGE:0, CURFEW:0, ASSET:0, SIZE:0, BUDGET:0 };
-  S.violations.forEach(v => counts[v.type] = (counts[v.type]||0) + 1);
-  
+  const counts = { REVENGE:0, CURFEW:0, ASSET:0, SIZE:0, BUDGET:0, WALLET:0 };
+  S.violations.forEach(v => { if (!v.approved) counts[v.type] = (counts[v.type]||0) + 1; });
+
   const rules = [
+    { name: 'Wallet Budget', key: 'WALLET', icon: '👛', desc: 'Wallet value within $125 weekly limit', severity: counts.WALLET > 0 ? 'alert' : 'ok' },
     { name: 'Revenge Trading', key: 'REVENGE', icon: '🔥', desc: 'Trading within 10 min of a loss', severity: counts.REVENGE > 0 ? 'alert' : 'ok' },
-    { name: 'Budget Compliance', key: 'BUDGET', icon: '💰', desc: 'Weekly spend within $125 limit', severity: counts.BUDGET > 0 ? 'alert' : 'ok' },
+    { name: 'Trade Spend', key: 'BUDGET', icon: '💰', desc: 'Weekly trade spend within $125 limit', severity: counts.BUDGET > 0 ? 'alert' : 'ok' },
     { name: 'Position Sizing', key: 'SIZE', icon: '📏', desc: 'Entries within 5% of weekly budget', severity: counts.SIZE > 0 ? 'warn' : 'ok' },
     { name: 'Approved Assets', key: 'ASSET', icon: '🪙', desc: 'BTC, SOL, ETH perps only', severity: counts.ASSET > 0 ? 'warn' : 'ok' },
     { name: 'Curfew (Midnight)', key: 'CURFEW', icon: '🌙', desc: 'No trading between 12am–6am', severity: counts.CURFEW > 0 ? 'warn' : 'ok' },
@@ -430,13 +455,20 @@ function renderCompliance() {
   
   // Violation log
   if (S.violations.length) {
-    html += `<div class="panel"><div class="pl">Violation Log (${S.violations.length} total)</div>`;
+    const openCount = S.violations.filter(v => !v.approved).length;
+    html += `<div class="panel"><div class="pl">Violation Log — ${S.violations.length} total · ${openCount} open</div>`;
     html += `<div style="max-height:400px;overflow-y:auto">`;
     for (const v of S.violations.slice(0, 50)) {
       const colors = { alert:'#ef4444', warn:'#f59e0b', info:'#3b82f6' };
-      html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:flex-start">
+      const k = violationKey(v);
+      const isTradeSig = v.sig && !v.sig.startsWith('wallet:') && !v.sig.startsWith('budget:');
+      const approveBtn = v.approved
+        ? `<button onclick="toggleApproval('${k}')" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ approved · undo</button>`
+        : `<button onclick="toggleApproval('${k}')" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">approve</button>`;
+      html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:center;${v.approved?'opacity:.45':''}">
         <span class="tag" style="background:${colors[v.severity]}20;color:${colors[v.severity]};min-width:60px;text-align:center">${v.type}</span>
-        <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time?`<div style="color:#475569;font-size:9px;margin-top:2px">${fmtT(v.time)} · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a></div>`:''}</div>
+        <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time||isTradeSig?`<div style="color:#475569;font-size:9px;margin-top:2px">${v.time?fmtT(v.time):''}${isTradeSig?` · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a>`:''}</div>`:''}</div>
+        ${approveBtn}
       </div>`;
     }
     html += '</div></div>';
@@ -500,7 +532,7 @@ function renderRules() {
 }
 
 function renderAlerts() {
-  const critical = S.violations.filter(v => v.severity === 'alert');
+  const critical = S.violations.filter(v => v.severity === 'alert' && !v.approved);
   if (critical.length) {
     $('aBadge').classList.remove('hidden');
     $('aBadge').textContent = '⚠ ' + critical.length + ' ALERT' + (critical.length>1?'S':'');
@@ -538,15 +570,26 @@ async function init() {
     S.allTxns = await fetchAllTrades();
     $('txCount').textContent = S.allTxns.length + ' txns loaded';
     
-    // Parse Jupiter trades
+    // Parse Jupiter trades (filtered to tracking window)
     setStatus('Analyzing trades…');
     $('pBar').style.width = '92%';
-    S.trades = parseTrades(S.allTxns);
-    
+    S.trades = parseTrades(S.allTxns).filter(t => t.time >= TRACKING_START);
+
     // Compliance check
     setStatus('Checking compliance…');
     S.violations = checkCompliance(S.trades);
-    
+
+    // Wallet-over-budget check (current snapshot, keyed per week so approval auto-expires Monday)
+    const walletUsd = (S.sol||0) * (S.solPrice||0) + (S.usdc||0);
+    if (walletUsd > BUDGET_WEEKLY && S.solPrice) {
+      S.violations.unshift({
+        type: 'WALLET', severity: 'alert', time: 0,
+        sig: 'wallet:' + getWeekKey(new Date()),
+        detail: `Wallet $${walletUsd.toFixed(2)} exceeds $${BUDGET_WEEKLY} weekly budget (${(S.sol||0).toFixed(2)} SOL @ $${S.solPrice.toFixed(2)} + $${(S.usdc||0).toFixed(2)} USDC)`
+      });
+    }
+    refreshApprovalState();
+
     // Weekly aggregation
     S.weeklyData = aggregateWeekly(S.trades);
     
