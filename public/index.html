@@ -80,6 +80,7 @@
 
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
+<div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override</button></div></div>
 
 <div class="tabs">
   <button class="tab active" onclick="stab('overview',this)">Overview</button>
@@ -139,7 +140,7 @@ function toggleApproval(key) {
   if (a.has(key)) a.delete(key); else a.add(key);
   saveApprovals(a);
   refreshApprovalState();
-  renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts();
+  renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts(); tickCooldown();
 }
 
 // ─── SOL price (CoinGecko, no key) ───
@@ -605,7 +606,8 @@ async function init() {
     renderWeekly();
     renderRules();
     renderAlerts();
-    
+    tickCooldown();
+
     $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> connected via Helius';
     S.lastUpdated = Date.now();
     tickFreshness();
@@ -620,6 +622,42 @@ async function init() {
   $('rBtn').disabled = false;
   $('rBtn').textContent = '↻ Refresh';
 }
+
+// ─── Cooldown ───
+function getNextMonday() {
+  const d = new Date(), day = d.getDay();
+  const daysUntilMonday = day === 1 ? 7 : (1 - day + 7) % 7 || 7;
+  const mon = new Date(d); mon.setHours(0,0,0,0); mon.setDate(d.getDate() + daysUntilMonday);
+  return mon;
+}
+function getCooldownKey() { return `COOLDOWN|cooldown:${getWeekKey(new Date())}|0`; }
+function overrideCooldown() {
+  const a = loadApprovals(); a.add(getCooldownKey()); saveApprovals(a); tickCooldown();
+}
+function isInCooldown() {
+  if (loadApprovals().has(getCooldownKey())) return null;
+  const thisWeek = getWeekKey(new Date());
+  const weekSpent = S.trades.filter(t => t.weekKey === thisWeek).reduce((sum,t) => sum + (t.usdcIn||0), 0);
+  if (weekSpent >= BUDGET_WEEKLY) return { reason: `Used $${weekSpent.toFixed(2)} of $${BUDGET_WEEKLY} weekly budget` };
+  if (S.solPrice && S.sol !== null) {
+    const wallet = S.sol * S.solPrice + (S.usdc||0);
+    if (wallet < 10) return { reason: `Wallet depleted — $${wallet.toFixed(2)}` };
+  }
+  return null;
+}
+function tickCooldown() {
+  const banner = $('cooldownBanner'); if (!banner) return;
+  const cd = isInCooldown();
+  if (!cd) { banner.classList.add('hidden'); return; }
+  banner.classList.remove('hidden');
+  const next = getNextMonday();
+  const ms = next.getTime() - Date.now();
+  const days = Math.floor(ms/86400000);
+  const hh = Math.floor((ms%86400000)/3600000);
+  const mm = Math.floor((ms%3600000)/60000);
+  $('cooldownDetail').textContent = `${cd.reason} · Next release ${next.toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short'})} in ${days}d ${hh}h ${mm}m`;
+}
+setInterval(tickCooldown, 60_000);
 
 // ─── Curfew countdown ───
 function tickCurfew() {
