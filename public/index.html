@@ -263,28 +263,31 @@ function checkCompliance(trades) {
     const assets = [t.tokenIn, t.tokenOut].filter(Boolean);
     const nonAllowed = assets.filter(a => !ALLOWED_ASSETS.some(al => a.toUpperCase().includes(al.toUpperCase())));
     if (nonAllowed.length) {
-      violations.push({ type: 'ASSET', severity: 'warn', time: t.time, sig: t.sig, detail: `Traded non-approved asset: ${nonAllowed.join(', ')}` });
+      violations.push({ type: 'ASSET', severity: 'warn', time: t.time, sig: t.sig, detail: `Traded ${nonAllowed.join(', ')} · rule allows BTC/SOL/ETH/USDC only` });
     }
-    
-    // 2. Position size check (if USDC input > 5% of weekly budget)
-    if (t.usdcIn > BUDGET_WEEKLY * MAX_POS_PCT * 2) { // using 2x the 5% as flag threshold since leverage is 200x
-      violations.push({ type: 'SIZE', severity: 'warn', time: t.time, sig: t.sig, detail: `Position size $${t.usdcIn.toFixed(2)} may exceed 5% rule ($${(BUDGET_WEEKLY*MAX_POS_PCT).toFixed(2)})` });
+
+    // 2. Position size check (USDC margin > 10% of weekly budget — 2x the 5% rule, since 200x leverage makes margin a fuzzy proxy)
+    if (t.usdcIn > BUDGET_WEEKLY * MAX_POS_PCT * 2) {
+      const pct = (t.usdcIn / BUDGET_WEEKLY) * 100;
+      violations.push({ type: 'SIZE', severity: 'warn', time: t.time, sig: t.sig, detail: `Trade margin $${t.usdcIn.toFixed(2)} is ${pct.toFixed(0)}% of weekly budget · rule is 5% max ($${(BUDGET_WEEKLY*MAX_POS_PCT).toFixed(2)})` });
     }
-    
-    // 3. Curfew check (after midnight AEST = UTC+10, so after 14:00 UTC previous day... approximate with local time)
-    if (t.hour >= 0 && t.hour < 6) { // crude: trading between midnight and 6am local
-      violations.push({ type: 'CURFEW', severity: 'info', time: t.time, sig: t.sig, detail: `Trade at ${t.date.toLocaleTimeString()} — curfew is midnight` });
+
+    // 3. Curfew check (no trading midnight–6am local)
+    if (t.hour >= 0 && t.hour < 6) {
+      const hh = String(t.date.getHours()).padStart(2,'0'), mm = String(t.date.getMinutes()).padStart(2,'0');
+      violations.push({ type: 'CURFEW', severity: 'info', time: t.time, sig: t.sig, detail: `Trade at ${hh}:${mm} · rule is no trading 12am–6am` });
     }
-    
-    // 4. Revenge trade detection (trade within 10 min of previous trade that lost money)
+
+    // 4. Revenge trade detection (trade within 10 min of a losing previous trade)
     if (i < trades.length - 1) {
-      const prev = trades[i + 1]; // previous chronologically (array is newest-first)
+      const prev = trades[i + 1];
       if (prev.pnl < -0.5 && (t.time - prev.time) < 600) {
-        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${Math.floor((t.time-prev.time)/60)}min after a loss of $${Math.abs(prev.pnl).toFixed(2)}` });
+        const mins = Math.max(1, Math.floor((t.time-prev.time)/60));
+        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${mins}min after a $${Math.abs(prev.pnl).toFixed(2)} loss · rule is 10min cooldown after losses` });
       }
     }
   }
-  
+
   // 5. Weekly budget check
   const weeks = {};
   trades.forEach(t => {
@@ -292,10 +295,10 @@ function checkCompliance(trades) {
     weeks[t.weekKey].spent += t.usdcIn;
     weeks[t.weekKey].trades++;
   });
-  
+
   for (const [wk, data] of Object.entries(weeks)) {
     if (data.spent > BUDGET_WEEKLY * 1.5) {
-      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: 'budget:' + wk, detail: `Week of ${wk}: $${data.spent.toFixed(2)} spent (budget: $${BUDGET_WEEKLY})` });
+      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: 'budget:' + wk, detail: `Week of ${wk}: spent $${data.spent.toFixed(2)} · rule is $${BUDGET_WEEKLY} max` });
     }
   }
   
@@ -589,7 +592,7 @@ async function init() {
       S.violations.unshift({
         type: 'WALLET', severity: 'alert', time: 0,
         sig: 'wallet:' + getWeekKey(new Date()),
-        detail: `Wallet $${walletUsd.toFixed(2)} exceeds $${BUDGET_WEEKLY} weekly budget (${(S.sol||0).toFixed(2)} SOL @ $${S.solPrice.toFixed(2)} + $${(S.usdc||0).toFixed(2)} USDC)`
+        detail: `Wallet $${walletUsd.toFixed(2)} · rule is $${BUDGET_WEEKLY} max release/week (${(S.sol||0).toFixed(2)} SOL @ $${S.solPrice.toFixed(2)} + $${(S.usdc||0).toFixed(2)} USDC)`
       });
     }
     refreshApprovalState();
