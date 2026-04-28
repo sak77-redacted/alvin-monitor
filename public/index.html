@@ -52,6 +52,30 @@
   .win{color:#22c55e} .loss{color:#ef4444} .neutral{color:#64748b}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
   ::-webkit-scrollbar{height:6px;width:6px} ::-webkit-scrollbar-track{background:#1e293b} ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+  @media (max-width:640px){
+    .hdr{padding:14px}
+    .hdr-top{gap:8px}
+    .meta{gap:10px;font-size:9px}
+    .tmain{font-size:17px}
+    .cnt{padding:12px}
+    .tabs{margin:10px 12px 0}
+    .tab{padding:9px 11px;font-size:10px}
+    .err,.abanner{margin:10px 12px 0;padding:12px}
+    .footer{padding:14px}
+    .cards{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+    .card{padding:11px}
+    .cv{font-size:17px}
+    .cl{font-size:8px}
+    .cu{font-size:8px}
+    .panel{padding:12px;margin-bottom:12px}
+    .pl{font-size:10px}
+    th,td{padding:6px 8px;font-size:10px}
+    .btn{padding:7px 12px;font-size:11px}
+    #curfew{padding:4px 8px;font-size:10px}
+  }
+  @media (max-width:380px){
+    .cards{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>
@@ -413,7 +437,7 @@ function renderOverview() {
   const breakdown = S.solPrice
     ? `${(S.sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(S.usdc||0).toFixed(2)} USDC · SOL @ $${S.solPrice.toFixed(2)}`
     : `${(S.sol||0).toFixed(4)} SOL + $${(S.usdc||0).toFixed(2)} USDC · SOL price unavailable`;
-  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:32px;font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px">${breakdown}</div></div>`;
+  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown}</div></div>`;
   html += `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
