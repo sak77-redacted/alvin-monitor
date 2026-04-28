@@ -335,6 +335,56 @@ function pnlClass(v) { return v > 0 ? 'win' : v < 0 ? 'loss' : 'neutral'; }
 function pnlStr(v) { return v > 0 ? '+$'+v.toFixed(2) : v < 0 ? '-$'+Math.abs(v).toFixed(2) : '$0.00'; }
 function setStatus(t) { $('statusDot').innerHTML = '<span style="color:#f59e0b">●</span> ' + t; }
 
+// ─── Pre-trade self-check ───
+function tradeCheck() {
+  const checks = [];
+  const now = new Date(), hour = now.getHours(), min = now.getMinutes();
+
+  if (hour >= 0 && hour < 6) {
+    checks.push({ ok:false, name:'Curfew', reason:`In curfew · ${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')} (12am–6am)` });
+  } else if (hour >= 23) {
+    const mins = (24-hour)*60 - min;
+    checks.push({ ok:false, name:'Curfew', reason:`${mins}min to midnight · too close, stop now` });
+  } else if (hour >= 22) {
+    const mins = (24-hour)*60 - min;
+    checks.push({ ok:'warn', name:'Curfew', reason:`${mins}min to midnight · wind down soon` });
+  } else {
+    checks.push({ ok:true, name:'Curfew', reason:'Outside curfew window' });
+  }
+
+  const cd = isInCooldown();
+  if (cd) checks.push({ ok:false, name:'Cooldown', reason:cd.reason + ' · override from banner if needed' });
+  else checks.push({ ok:true, name:'Cooldown', reason:'Weekly budget available' });
+
+  if (S.solPrice && S.sol !== null) {
+    const wallet = S.sol * S.solPrice + (S.usdc||0);
+    if (wallet > BUDGET_WEEKLY) {
+      const walletKey = `WALLET|wallet:${getWeekKey(new Date())}|0`;
+      const approved = loadApprovals().has(walletKey);
+      checks.push(approved
+        ? { ok:'warn', name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} (approved by you)` }
+        : { ok:false, name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} · approve in Compliance to proceed` });
+    } else {
+      checks.push({ ok:true, name:'Wallet size', reason:`$${wallet.toFixed(2)} within budget` });
+    }
+  }
+
+  const lastTrade = S.trades[0];
+  if (lastTrade && lastTrade.pnl < -0.5) {
+    const sinceSec = (Date.now()/1000) - lastTrade.time;
+    if (sinceSec < 600) {
+      const left = Math.ceil((600 - sinceSec) / 60);
+      checks.push({ ok:false, name:'Post-loss', reason:`Last trade lost $${Math.abs(lastTrade.pnl).toFixed(2)} · wait ${left}min more (rule: 10min)` });
+    } else {
+      checks.push({ ok:true, name:'Post-loss', reason:'10min cooldown after last loss has cleared' });
+    }
+  } else {
+    checks.push({ ok:true, name:'Post-loss', reason:'No recent loss in window' });
+  }
+
+  return checks;
+}
+
 // ─── Render Functions ───
 function renderOverview() {
   const totalPnl = S.trades.reduce((s,t) => s + t.pnl, 0);
@@ -375,6 +425,23 @@ function renderOverview() {
     html += `<div class="panel"><div class="pl">Budget: $${wallet.toFixed(2)} / $${BUDGET_WEEKLY} weekly · tracking from ${trackLabel}</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${wallet.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(wallet-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-wallet).toFixed(2)+' remaining'}</span></div></div>`;
   }
   
+  // Pre-trade self-check
+  const checks = tradeCheck();
+  const blocked = checks.filter(c => c.ok === false);
+  const warns = checks.filter(c => c.ok === 'warn');
+  const verdict = blocked.length
+    ? { color:'#ef4444', bg:'#dc262610', icon:'✗', text:`NO · ${blocked.length} blocking` }
+    : warns.length
+    ? { color:'#f59e0b', bg:'#f59e0b10', icon:'⚠', text:'PROCEED WITH CAUTION' }
+    : { color:'#22c55e', bg:'#22c55e10', icon:'✓', text:'GO · all clear' };
+  html += `<div class="panel" style="border-left:3px solid ${verdict.color};background:${verdict.bg}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">Pre-trade check</div><div style="font-size:14px;font-weight:700;color:${verdict.color}">${verdict.icon} ${verdict.text}</div></div>`;
+  html += checks.map(c => {
+    const i = c.ok === true ? '✓' : c.ok === 'warn' ? '⚠' : '✗';
+    const co = c.ok === true ? '#22c55e' : c.ok === 'warn' ? '#f59e0b' : '#ef4444';
+    return `<div style="padding:5px 0;font-size:11px;display:flex;gap:10px;align-items:flex-start"><span style="color:${co};font-weight:700;width:14px;flex-shrink:0">${i}</span><span style="color:#94a3b8;min-width:100px;flex-shrink:0">${c.name}</span><span style="color:#64748b;flex:1">${c.reason}</span></div>`;
+  }).join('');
+  html += `</div>`;
+
   // Recent trades
   html += `<div class="panel"><div class="pl">Last 5 Trades</div>`;
   if (S.trades.length) {
