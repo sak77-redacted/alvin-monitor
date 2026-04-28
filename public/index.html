@@ -62,7 +62,8 @@
       <div class="tsub">Risk Management Console</div>
       <div class="tmain">Alvin <span>Trading Monitor</span></div>
     </div>
-    <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span id="curfew" style="font-size:11px;color:#475569;padding:6px 10px;border:1px solid #1e293b;border-radius:6px;white-space:nowrap"></span>
       <div id="aBadge" class="abadge hidden"></div>
       <span id="statusDot" style="font-size:10px;color:#475569">● connecting</span>
       <button class="btn" id="rBtn" onclick="init()">↻ Refresh</button>
@@ -619,6 +620,30 @@ async function init() {
   $('rBtn').disabled = false;
   $('rBtn').textContent = '↻ Refresh';
 }
+
+// ─── Curfew countdown ───
+function tickCurfew() {
+  const el = $('curfew'); if (!el) return;
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  const inCurfew = h >= 0 && h < 6;
+  if (inCurfew) {
+    el.style.color = '#ef4444';
+    el.style.borderColor = '#ef4444';
+    el.style.background = '#dc262615';
+    el.innerHTML = `🌙 in curfew · ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+    return;
+  }
+  const ms = new Date(now).setHours(24,0,0,0) - now.getTime();
+  const hh = Math.floor(ms/3600000), mm = Math.floor((ms%3600000)/60000);
+  let color = '#475569', border = '#1e293b', bg = 'transparent';
+  if (h >= 23) { color = '#ef4444'; border = '#ef4444'; bg = '#dc262610'; }
+  else if (h >= 22) { color = '#f59e0b'; border = '#f59e0b50'; bg = '#f59e0b10'; }
+  el.style.color = color; el.style.borderColor = border; el.style.background = bg;
+  el.innerHTML = `🌙 ${hh}h ${mm.toString().padStart(2,'0')}m to midnight`;
+}
+tickCurfew();
+setInterval(tickCurfew, 30_000);
 
 // ─── Freshness ticker + auto-refresh ───
 function tickFreshness() {
