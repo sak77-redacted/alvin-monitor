@@ -105,7 +105,7 @@
 
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
-<div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override</button></div></div>
+<div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
 
 <div class="tabs">
   <button class="tab active" onclick="stab('overview',this)">Overview</button>
@@ -172,9 +172,22 @@ function loadIdentity() { try { return localStorage.getItem('alvin_identity') ||
 function saveIdentity(v) { try { localStorage.setItem('alvin_identity', v); } catch {} rerenderApprovalUI(); }
 
 // ─── Approvals (Vercel KV, shared between Alvin and Ken) ───
+// REVENGE / WALLET / COOLDOWN need both Alvin AND Ken to approve before clearing.
+// Other types clear with a single approval.
+const DUAL_APPROVAL_TYPES = new Set(['REVENGE', 'WALLET', 'COOLDOWN']);
 function violationKey(v) { return `${v.type}|${v.sig||''}|${v.time||0}`; }
-function isApproved(key) { return !!S.approvals[key]; }
-function approvedBy(key) { return S.approvals[key]?.by; }
+function parseApprovers(raw) {
+  if (!raw) return [];
+  if (raw.by && raw.at) return [{ by: raw.by, at: raw.at }];
+  return Object.entries(raw).map(([by, v]) => ({ by, at: v?.at || 0 }));
+}
+function approversOf(key) { return parseApprovers(S.approvals[key]); }
+function requiredFor(type) { return DUAL_APPROVAL_TYPES.has(type) ? 2 : 1; }
+function isApproved(key, type) { return approversOf(key).length >= requiredFor(type); }
+function meHasApproved(key) {
+  const me = loadIdentity();
+  return !!me && approversOf(key).some(a => a.by === me);
+}
 
 async function fetchSharedApprovals() {
   try {
@@ -189,8 +202,8 @@ async function fetchSharedApprovals() {
 function refreshApprovalState() {
   S.violations.forEach(v => {
     const k = violationKey(v);
-    v.approved = isApproved(k);
-    v.approvedBy = approvedBy(k);
+    v.approvers = approversOf(k);
+    v.approved = v.approvers.length >= requiredFor(v.type);
   });
 }
 
@@ -207,11 +220,18 @@ async function toggleApproval(key) {
     alert('Pick your identity (Alvin or Ken) at the top right first.');
     return;
   }
-  const action = isApproved(key) ? 'unapprove' : 'approve';
+  const action = meHasApproved(key) ? 'unapprove' : 'approve';
   const at = Date.now();
-  // optimistic local update
-  if (action === 'approve') S.approvals[key] = { by, at };
-  else delete S.approvals[key];
+  // optimistic local merge — preserves the other party's approval if any
+  const prevRaw = S.approvals[key];
+  const merged = (() => {
+    const e = prevRaw?.by && prevRaw?.at ? { [prevRaw.by]: { at: prevRaw.at } } : { ...(prevRaw || {}) };
+    if (action === 'approve') e[by] = { at };
+    else delete e[by];
+    return e;
+  })();
+  if (Object.keys(merged).length === 0) delete S.approvals[key];
+  else S.approvals[key] = merged;
   S.audit.unshift({ action, key, by, at });
   rerenderApprovalUI();
   try {
@@ -223,8 +243,8 @@ async function toggleApproval(key) {
     if (!r.ok) throw new Error(await r.text());
   } catch (e) {
     // rollback on failure
-    if (action === 'approve') delete S.approvals[key];
-    else S.approvals[key] = { by:'?', at:0 };
+    if (prevRaw === undefined) delete S.approvals[key];
+    else S.approvals[key] = prevRaw;
     rerenderApprovalUI();
     alert('Failed to save: ' + e.message);
   }
@@ -447,7 +467,7 @@ function tradeCheck() {
     const wallet = S.sol * S.solPrice + (S.usdc||0);
     if (wallet > BUDGET_WEEKLY) {
       const walletKey = `WALLET|wallet:${getWeekKey(new Date())}|0`;
-      const approved = isApproved(walletKey);
+      const approved = isApproved(walletKey, 'WALLET');
       checks.push(approved
         ? { ok:'warn', name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} (approved by you)` }
         : { ok:false, name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} · approve in Compliance to proceed` });
@@ -624,13 +644,21 @@ function renderCompliance() {
       const colors = { alert:'#ef4444', warn:'#f59e0b', info:'#3b82f6' };
       const k = violationKey(v);
       const isTradeSig = v.sig && !v.sig.startsWith('wallet:') && !v.sig.startsWith('budget:');
-      const byLabel = v.approvedBy ? ` by ${v.approvedBy}` : '';
-      const approveBtn = v.approved
-        ? `<button onclick="toggleApproval('${k}')" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ approved${byLabel} · undo</button>`
-        : `<button onclick="toggleApproval('${k}')" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">approve</button>`;
+      const dual = DUAL_APPROVAL_TYPES.has(v.type);
+      const me = loadIdentity();
+      const meDid = (v.approvers||[]).some(a => a.by === me);
+      const byNames = (v.approvers||[]).map(a => a.by).join(' & ') || '—';
+      const subtitle = !v.approvers?.length ? '' :
+        v.approved ? `<span style="color:#22c55e">✓ approved by ${byNames}</span>` :
+        `<span style="color:#f59e0b">⚠ ${byNames} approved · awaiting ${(v.approvers[0].by==='alvin'?'Ken':'Alvin')}</span>`;
+      const btnLabel = meDid ? '✓ undo my approval' : (dual && v.approvers?.length===1 ? `approve (2nd of 2)` : 'approve');
+      const btnStyle = meDid
+        ? 'background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap'
+        : 'background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap';
+      const approveBtn = `<button onclick="toggleApproval('${k}')" style="${btnStyle}">${btnLabel}</button>`;
       html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:center;${v.approved?'opacity:.45':''}">
         <span class="tag" style="background:${colors[v.severity]}20;color:${colors[v.severity]};min-width:60px;text-align:center">${v.type}</span>
-        <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time||isTradeSig?`<div style="color:#475569;font-size:9px;margin-top:2px">${v.time?fmtT(v.time):''}${isTradeSig?` · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a>`:''}</div>`:''}</div>
+        <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time||isTradeSig||subtitle?`<div style="color:#475569;font-size:9px;margin-top:2px">${v.time?fmtT(v.time):''}${isTradeSig?` · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a>`:''}${subtitle?` · ${subtitle}`:''}</div>`:''}</div>
         ${approveBtn}
       </div>`;
     }
@@ -863,7 +891,7 @@ function getNextMonday() {
 function getCooldownKey() { return `COOLDOWN|cooldown:${getWeekKey(new Date())}|0`; }
 function overrideCooldown() { return toggleApproval(getCooldownKey()); }
 function isInCooldown() {
-  if (isApproved(getCooldownKey())) return null;
+  if (isApproved(getCooldownKey(), 'COOLDOWN')) return null;
   const thisWeek = getWeekKey(new Date());
   const weekSpent = S.trades.filter(t => t.weekKey === thisWeek).reduce((sum,t) => sum + (t.usdcIn||0), 0);
   if (weekSpent >= BUDGET_WEEKLY) return { reason: `Used $${weekSpent.toFixed(2)} of $${BUDGET_WEEKLY} weekly budget` };
@@ -883,7 +911,17 @@ function tickCooldown() {
   const days = Math.floor(ms/86400000);
   const hh = Math.floor((ms%86400000)/3600000);
   const mm = Math.floor((ms%3600000)/60000);
-  $('cooldownDetail').textContent = `${cd.reason} · Next release ${next.toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short'})} in ${days}d ${hh}h ${mm}m`;
+  const approvers = approversOf(getCooldownKey());
+  const me = loadIdentity();
+  const meDid = approvers.some(a => a.by === me);
+  const btn = $('cooldownOverrideBtn');
+  if (btn) {
+    if (meDid) btn.textContent = 'undo my approval';
+    else if (approvers.length === 1) btn.textContent = `approve (2nd of 2 · ${approvers[0].by} approved)`;
+    else btn.textContent = 'override (needs Alvin & Ken)';
+  }
+  const note = approvers.length === 1 ? ` · ${approvers[0].by} approved, awaiting ${approvers[0].by==='alvin'?'Ken':'Alvin'}` : '';
+  $('cooldownDetail').textContent = `${cd.reason}${note} · Next release ${next.toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short'})} in ${days}d ${hh}h ${mm}m`;
 }
 setInterval(tickCooldown, 60_000);
 

@@ -23,7 +23,27 @@ async function kvPipeline(commands) {
   return d.map(x => x.result);
 }
 
+async function kvCmd(args) {
+  const r = await fetch(KV_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  if (!r.ok) throw new Error(`KV ${r.status}: ${await r.text()}`);
+  const d = await r.json();
+  return d.result;
+}
+
 function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
+
+// Normalize an approval entry to { [by]: { at } } shape, tolerating the older
+// single-approver { by, at } records from before two-party approval shipped.
+function normalizeEntry(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') raw = safeParse(raw) || {};
+  if (raw && typeof raw === 'object' && raw.by && raw.at) return { [raw.by]: { at: raw.at } };
+  return raw && typeof raw === 'object' ? raw : {};
+}
 
 export default async function handler(req, res) {
   if (!KV_URL || !KV_TOKEN) {
@@ -61,15 +81,22 @@ export default async function handler(req, res) {
       }
       const at = Date.now();
       const auditEntry = JSON.stringify({ action, key, by, at });
-      const writeCmd = action === 'approve'
-        ? ['HSET', APPROVALS_KEY, key, JSON.stringify({ by, at })]
-        : ['HDEL', APPROVALS_KEY, key];
+
+      // Read-modify-write so multiple approvers stack instead of overwriting.
+      const existing = await kvCmd(['HGET', APPROVALS_KEY, key]);
+      const entry = normalizeEntry(existing);
+      if (action === 'approve') entry[by] = { at };
+      else delete entry[by];
+
+      const writeCmds = Object.keys(entry).length === 0
+        ? [['HDEL', APPROVALS_KEY, key]]
+        : [['HSET', APPROVALS_KEY, key, JSON.stringify(entry)]];
       await kvPipeline([
-        writeCmd,
+        ...writeCmds,
         ['LPUSH', AUDIT_KEY, auditEntry],
         ['LTRIM', AUDIT_KEY, '0', String(AUDIT_LIMIT)],
       ]);
-      res.status(200).json({ ok: true, at });
+      res.status(200).json({ ok: true, at, approvers: Object.keys(entry) });
       return;
     }
 
