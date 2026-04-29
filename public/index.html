@@ -95,7 +95,7 @@
   </div>
   <div class="meta">
     <span>Wallet: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt" target="_blank">6gYe..yqQt ↗</a></span>
-    <span>Multisig: <a href="https://solscan.io/account/Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ" target="_blank">Grtr..GXSZ ↗</a></span>
+    <span>Multisig: <a href="https://solscan.io/account/9gtkhqMoWh9VcYkBcQ8gESifqspmpuFZp52MkG12zkY4" target="_blank">9gtk..zkY4 ↗</a></span>
     <span id="txCount"></span>
     <span id="updAt"></span>
   </div>
@@ -111,6 +111,7 @@
   <button class="tab" onclick="stab('trades',this)">Trades</button>
   <button class="tab" onclick="stab('compliance',this)">Compliance</button>
   <button class="tab" onclick="stab('weekly',this)">Weekly</button>
+  <button class="tab" onclick="stab('multisig',this)">Multisig</button>
   <button class="tab" onclick="stab('rules',this)">Rules</button>
 </div>
 
@@ -119,6 +120,7 @@
   <div id="tab-trades" class="hidden"></div>
   <div id="tab-compliance" class="hidden"></div>
   <div id="tab-weekly" class="hidden"></div>
+  <div id="tab-multisig" class="hidden"></div>
   <div id="tab-rules" class="hidden"></div>
 </div>
 
@@ -126,7 +128,13 @@
 
 <script>
 const W = "6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt";
-const MS = "Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ";
+const MS = "9gtkhqMoWh9VcYkBcQ8gESifqspmpuFZp52MkG12zkY4";
+const TOKEN_SYMBOLS = {
+  'So11111111111111111111111111111111111111112': 'SOL',
+  '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs': 'wETH',
+  '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh': 'wBTC',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
+};
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const HELIUS_KEY = "235a7270-8c96-4fba-8655-6d732e4ba772";
 const HELIUS = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
@@ -142,7 +150,19 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, solPrice:null, trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null };
+let S = { sol:null, usdc:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, positions:[] } };
+
+function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
+const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
+
+async function fetchPositions(addr) {
+  try {
+    const r = await fetch(`https://perps-api.jup.ag/v1/positions?walletAddress=${addr}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d?.dataList || [];
+  } catch { return []; }
+}
 
 const REFRESH_MS = 60_000; // auto-refresh interval
 
@@ -438,6 +458,7 @@ function renderOverview() {
     ? `${(S.sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(S.usdc||0).toFixed(2)} USDC · SOL @ $${S.solPrice.toFixed(2)}`
     : `${(S.sol||0).toFixed(4)} SOL + $${(S.usdc||0).toFixed(2)} USDC · SOL price unavailable`;
   let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown}</div></div>`;
+  html += renderPositionsPanel(S.positions);
   html += `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
@@ -629,6 +650,55 @@ function renderRules() {
   $('tab-rules').innerHTML = rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('') + '<div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div>';
 }
 
+// ─── Position rendering ───
+function renderPositionCard(p) {
+  const side = (p.side || 'pos').toLowerCase();
+  const sideColor = side === 'long' ? '#22c55e' : side === 'short' ? '#ef4444' : '#64748b';
+  const mkt = tokenSymbol(p.marketMint || p.market || p.indexToken);
+  const sizeUsd = numish(p.sizeUsd ?? p.size);
+  const collat = numish(p.collateralUsd ?? p.collateral);
+  const entry = numish(p.entryPrice ?? p.averagePrice);
+  const mark = numish(p.markPrice ?? p.currentPrice ?? p.indexPrice);
+  const liq = numish(p.liquidationPrice);
+  const pnl = numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees);
+  const lev = numish(p.leverage) || (sizeUsd && collat ? sizeUsd / collat : 0);
+  let liqDist = 0;
+  if (liq > 0 && mark > 0) liqDist = side === 'long' ? ((mark - liq) / mark) * 100 : ((liq - mark) / mark) * 100;
+  const liqColor = liqDist > 0 && liqDist < 5 ? '#ef4444' : liqDist < 15 ? '#f59e0b' : '#22c55e';
+  const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
+  return `<div style="border:1px solid ${sideColor}30;border-left:3px solid ${sideColor};border-radius:8px;padding:14px;margin-bottom:8px;background:#0f1923">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div><div style="font-size:14px;font-weight:700;color:${sideColor}">${side.toUpperCase()} ${mkt}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${lev.toFixed(1)}x · $${sizeUsd.toFixed(2)} size · $${collat.toFixed(2)} collateral</div></div>
+      <div style="text-align:right"><div style="font-size:16px;font-weight:700;color:${pnlColor};font-variant-numeric:tabular-nums">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div><div style="font-size:9px;color:#64748b">unrealized P&L</div></div>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
+  </div>`;
+}
+
+function renderPositionsPanel(positions, label = 'Open Positions') {
+  if (!positions?.length) return '';
+  const totalPnl = positions.reduce((s,p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
+  const totalSize = positions.reduce((s,p) => s + numish(p.sizeUsd ?? p.size), 0);
+  const pnlColor = totalPnl >= 0 ? '#22c55e' : '#ef4444';
+  return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">${label} · ${positions.length}</div><div style="font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums">$${totalSize.toFixed(2)} total · <span style="color:${pnlColor};font-weight:600">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)} P&L</span></div></div>${positions.map(renderPositionCard).join('')}</div>`;
+}
+
+// ─── Multisig tab ───
+function renderMultisig() {
+  const sol = S.ms.sol, usdc = S.ms.usdc;
+  const haveBal = sol !== null;
+  const solValue = (sol||0) * (S.solPrice||0);
+  const totalUsd = solValue + (usdc||0);
+  const breakdown = S.solPrice
+    ? `${(sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(usdc||0).toFixed(2)} USDC · SOL @ $${S.solPrice.toFixed(2)}`
+    : `${(sol||0).toFixed(4)} SOL + $${(usdc||0).toFixed(2)} USDC · SOL price unavailable`;
+  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Multisig Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBal?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown} · <a href="https://solscan.io/account/${MS}" target="_blank">${short(MS)} ↗</a></div></div>`;
+  html += renderPositionsPanel(S.ms.positions, 'Multisig Open Positions');
+  html += `<div class="cards"><div class="card" style="border:1px solid #9945ff30"><div class="cs" style="background:#9945ff"></div><div class="cl">SOL</div><div class="cv" style="color:#9945ff">${sol!==null?sol.toFixed(4):'…'}</div><div class="cu">balance</div></div><div class="card" style="border:1px solid #2775ca30"><div class="cs" style="background:#2775ca"></div><div class="cl">USDC</div><div class="cv" style="color:#2775ca">${usdc!==null?usdc.toFixed(2):'…'}</div><div class="cu">balance</div></div></div>`;
+  if (!S.ms.positions?.length) html += '<div class="panel" style="text-align:center;color:#475569;padding:20px;font-size:12px">No open positions</div>';
+  $('tab-multisig').innerHTML = html;
+}
+
 function renderAlerts() {
   const critical = S.violations.filter(v => v.severity === 'alert' && !v.approved);
   if (critical.length) {
@@ -650,19 +720,26 @@ async function init() {
   $('pBar').style.width = '10%';
   
   try {
-    // Balances
-    setStatus('Fetching balances…');
-    const bal = await rpc("getBalance", [W]);
-    S.sol = bal.value / 1e9;
-    $('pBar').style.width = '15%';
-    await sleep(300);
-    
-    try {
-      const tk = await rpc("getTokenAccountsByOwner", [W, {mint:USDC_MINT}, {encoding:"jsonParsed"}]);
-      S.usdc = tk.value.length > 0 ? tk.value[0].account.data.parsed.info.tokenAmount.uiAmount : 0;
-    } catch { S.usdc = 0; }
-
-    S.solPrice = await fetchSolPrice();
+    // Balances + positions for trader and multisig, in parallel
+    setStatus('Fetching balances & positions…');
+    const usdcOf = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
+    const [tBal, tTok, msBal, msTok, traderPos, msPos, solPrice] = await Promise.all([
+      rpc("getBalance", [W]),
+      rpc("getTokenAccountsByOwner", [W,  {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
+      rpc("getBalance", [MS]).catch(() => null),
+      rpc("getTokenAccountsByOwner", [MS, {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
+      fetchPositions(W),
+      fetchPositions(MS),
+      fetchSolPrice(),
+    ]);
+    S.sol = tBal.value / 1e9;
+    S.usdc = usdcOf(tTok);
+    S.ms.sol = msBal ? msBal.value / 1e9 : null;
+    S.ms.usdc = usdcOf(msTok);
+    S.positions = traderPos;
+    S.ms.positions = msPos;
+    S.solPrice = solPrice;
+    $('pBar').style.width = '20%';
     
     // Fetch all transactions via Helius enhanced API
     S.allTxns = await fetchAllTrades();
@@ -698,6 +775,7 @@ async function init() {
     renderTrades();
     renderCompliance();
     renderWeekly();
+    renderMultisig();
     renderRules();
     renderAlerts();
     tickCooldown();
