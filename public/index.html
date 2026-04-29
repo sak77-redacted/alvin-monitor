@@ -503,9 +503,19 @@ function renderOverview() {
   const alerts = S.violations.filter(v => v.severity === 'alert' && !v.approved).length;
   const warns = S.violations.filter(v => v.severity === 'warn' && !v.approved).length;
   
+  // Today vs yesterday window (local midnight boundaries)
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const ydayStart = new Date(todayStart); ydayStart.setDate(ydayStart.getDate() - 1);
+  const todayStartSec = todayStart.getTime()/1000, ydayStartSec = ydayStart.getTime()/1000;
+  const todayTrades = S.trades.filter(t => t.time >= todayStartSec);
+  const ydayTrades = S.trades.filter(t => t.time >= ydayStartSec && t.time < todayStartSec);
+  const todayPnl = todayTrades.reduce((s,t) => s + t.pnl, 0);
+  const ydayPnl = ydayTrades.reduce((s,t) => s + t.pnl, 0);
+
   const cards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
+    {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
     {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
     {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
     {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
@@ -683,10 +693,27 @@ function renderCompliance() {
   $('tab-compliance').innerHTML = html;
 }
 
+function downloadWeeklyCsv() {
+  const headers = ['Week','Trades','Volume USD','P&L USD','Wins','Losses','Win Rate %','Over Budget'];
+  const rows = S.weeklyData.map(w => [
+    w.key, w.count, w.volume.toFixed(2), w.totalPnl.toFixed(2),
+    w.wins, w.losses, w.count ? (w.wins/w.count*100).toFixed(0) : '0',
+    w.volume > BUDGET_WEEKLY ? 'yes' : 'no',
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `alvin-weekly-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderWeekly() {
   if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
-  
-  let html = `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
+
+  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
+  html += `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
     <th>Week</th><th>Trades</th><th>Volume</th><th>P&L</th><th>Win Rate</th><th>Budget Status</th>
   </tr></thead><tbody>`;
   
@@ -751,12 +778,16 @@ function renderPositionCard(p) {
   if (liq > 0 && mark > 0) liqDist = side === 'long' ? ((mark - liq) / mark) * 100 : ((liq - mark) / mark) * 100;
   const liqColor = liqDist > 0 && liqDist < 5 ? '#ef4444' : liqDist < 15 ? '#f59e0b' : '#22c55e';
   const pnlColor = pnl >= 0 ? '#22c55e' : '#ef4444';
+  const links = [];
+  if (p.positionPubkey) links.push(`<a href="https://solscan.io/account/${p.positionPubkey}" target="_blank" style="color:#3b82f6">Solscan ↗</a>`);
+  links.push(`<a href="https://jup.ag/perps-legacy/${side}/1-${(mkt||'SOL').toLowerCase()}" target="_blank" style="color:#3b82f6">Jupiter ↗</a>`);
   return `<div style="border:1px solid ${sideColor}30;border-left:3px solid ${sideColor};border-radius:8px;padding:14px;margin-bottom:8px;background:#0f1923">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div><div style="font-size:14px;font-weight:700;color:${sideColor}">${side.toUpperCase()} ${mkt}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${lev.toFixed(1)}x · $${sizeUsd.toFixed(2)} size · $${collat.toFixed(2)} collateral</div></div>
       <div style="text-align:right"><div style="font-size:16px;font-weight:700;color:${pnlColor};font-variant-numeric:tabular-nums">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div><div style="font-size:9px;color:#64748b">unrealized P&L</div></div>
     </div>
-    <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
+    <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
+    <div style="font-size:10px;display:flex;gap:12px">${links.join(' · ')}</div>
   </div>`;
 }
 
