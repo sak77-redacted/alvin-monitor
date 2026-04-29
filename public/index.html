@@ -139,6 +139,7 @@ const TOKEN_SYMBOLS = {
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
 };
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 // Helius calls go through our serverless proxy (api/helius.js); the API key
 // lives only in Vercel env, never in the client bundle.
 const HELIUS_PROXY = '/api/helius';
@@ -153,7 +154,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, positions:[] }, approvals:{}, audit:[] };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[] };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -181,7 +182,7 @@ function saveLastSeenWallet(snap) { try { localStorage.setItem('alvin_last_seen_
 function checkWalletDelta() {
   const banner = $('walletDeltaBanner'); if (!banner) return;
   if (S.solPrice == null || S.sol == null) { banner.classList.add('hidden'); return; }
-  const walletUsd = S.sol * S.solPrice + (S.usdc || 0);
+  const walletUsd = S.sol * S.solPrice + (S.usdc || 0) + (S.usdt || 0);
   const lastSeen = loadLastSeenWallet();
   if (!lastSeen) { saveLastSeenWallet({ walletUsd, at: Date.now() }); banner.classList.add('hidden'); return; }
   const delta = walletUsd - lastSeen.walletUsd;
@@ -497,7 +498,7 @@ function tradeCheck() {
   else checks.push({ ok:true, name:'Cooldown', reason:'Weekly budget available' });
 
   if (S.solPrice && S.sol !== null) {
-    const wallet = S.sol * S.solPrice + (S.usdc||0);
+    const wallet = S.sol * S.solPrice + (S.usdc||0) + (S.usdt||0);
     if (wallet > BUDGET_WEEKLY) {
       const walletKey = `WALLET|wallet:${getWeekKey(new Date())}|0`;
       const approved = isApproved(walletKey, 'WALLET');
@@ -565,6 +566,7 @@ function renderOverview() {
   const cards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
+    ...(S.usdt > 0 ? [{l:'USDT',v:S.usdt.toFixed(2),u:'balance',c:'#26a17b'}] : []),
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
     {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
     {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
@@ -576,11 +578,12 @@ function renderOverview() {
   ];
   
   const solValue = (S.sol||0) * (S.solPrice||0);
-  const totalUsd = solValue + (S.usdc||0);
+  const totalUsd = solValue + (S.usdc||0) + (S.usdt||0);
   const haveBalances = S.sol !== null || S.usdc !== null;
+  const usdtPart = S.usdt > 0 ? ` + $${S.usdt.toFixed(2)} USDT` : '';
   const breakdown = S.solPrice
-    ? `${(S.sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(S.usdc||0).toFixed(2)} USDC · SOL @ $${S.solPrice.toFixed(2)}`
-    : `${(S.sol||0).toFixed(4)} SOL + $${(S.usdc||0).toFixed(2)} USDC · SOL price unavailable`;
+    ? `${(S.sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(S.usdc||0).toFixed(2)} USDC${usdtPart} · SOL @ $${S.solPrice.toFixed(2)}`
+    : `${(S.sol||0).toFixed(4)} SOL + $${(S.usdc||0).toFixed(2)} USDC${usdtPart} · SOL price unavailable`;
   let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown}</div></div>`;
   html += renderPositionsPanel(S.positions);
   html += `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
@@ -870,16 +873,21 @@ function renderPositionsPanel(positions, label = 'Open Positions') {
 
 // ─── Multisig tab ───
 function renderMultisig() {
-  const sol = S.ms.sol, usdc = S.ms.usdc;
+  const sol = S.ms.sol, usdc = S.ms.usdc, usdt = S.ms.usdt;
   const haveBal = sol !== null;
   const solValue = (sol||0) * (S.solPrice||0);
-  const totalUsd = solValue + (usdc||0);
+  const totalUsd = solValue + (usdc||0) + (usdt||0);
+  const usdtPart = usdt > 0 ? ` + $${usdt.toFixed(2)} USDT` : '';
   const breakdown = S.solPrice
-    ? `${(sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(usdc||0).toFixed(2)} USDC · SOL @ $${S.solPrice.toFixed(2)}`
-    : `${(sol||0).toFixed(4)} SOL + $${(usdc||0).toFixed(2)} USDC · SOL price unavailable`;
+    ? `${(sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(usdc||0).toFixed(2)} USDC${usdtPart} · SOL @ $${S.solPrice.toFixed(2)}`
+    : `${(sol||0).toFixed(4)} SOL + $${(usdc||0).toFixed(2)} USDC${usdtPart} · SOL price unavailable`;
   let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Multisig Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBal?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown} · <a href="https://solscan.io/account/${MS}" target="_blank">${short(MS)} ↗</a></div></div>`;
   html += renderPositionsPanel(S.ms.positions, 'Multisig Open Positions');
-  html += `<div class="cards"><div class="card" style="border:1px solid #9945ff30"><div class="cs" style="background:#9945ff"></div><div class="cl">SOL</div><div class="cv" style="color:#9945ff">${sol!==null?sol.toFixed(4):'…'}</div><div class="cu">balance</div></div><div class="card" style="border:1px solid #2775ca30"><div class="cs" style="background:#2775ca"></div><div class="cl">USDC</div><div class="cv" style="color:#2775ca">${usdc!==null?usdc.toFixed(2):'…'}</div><div class="cu">balance</div></div></div>`;
+  const card = (label, color, val, unit) => `<div class="card" style="border:1px solid ${color}30"><div class="cs" style="background:${color}"></div><div class="cl">${label}</div><div class="cv" style="color:${color}">${val}</div><div class="cu">${unit}</div></div>`;
+  let cardsHtml = card('SOL', '#9945ff', sol!==null?sol.toFixed(4):'…', 'balance');
+  cardsHtml += card('USDC', '#2775ca', usdc!==null?usdc.toFixed(2):'…', 'balance');
+  if (usdt > 0) cardsHtml += card('USDT', '#26a17b', usdt.toFixed(2), 'balance');
+  html += `<div class="cards">${cardsHtml}</div>`;
   if (!S.ms.positions?.length) html += '<div class="panel" style="text-align:center;color:#475569;padding:20px;font-size:12px">No open positions</div>';
   $('tab-multisig').innerHTML = html;
 }
@@ -907,21 +915,25 @@ async function init() {
   try {
     // Balances + positions for trader and multisig + shared approvals, in parallel
     setStatus('Fetching balances & positions…');
-    const usdcOf = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
-    const [tBal, tTok, msBal, msTok, traderPos, msPos, solPrice] = await Promise.all([
+    const tokenUiAmount = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
+    const [tBal, tUsdc, tUsdt, msBal, msUsdc, msUsdt, traderPos, msPos, solPrice] = await Promise.all([
       rpc("getBalance", [W]),
       rpc("getTokenAccountsByOwner", [W,  {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
+      rpc("getTokenAccountsByOwner", [W,  {mint:USDT_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
       rpc("getBalance", [MS]).catch(() => null),
       rpc("getTokenAccountsByOwner", [MS, {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
+      rpc("getTokenAccountsByOwner", [MS, {mint:USDT_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
       fetchPositions(W),
       fetchPositions(MS),
       fetchSolPrice(),
       fetchSharedApprovals(),
     ]);
     S.sol = tBal.value / 1e9;
-    S.usdc = usdcOf(tTok);
+    S.usdc = tokenUiAmount(tUsdc);
+    S.usdt = tokenUiAmount(tUsdt);
     S.ms.sol = msBal ? msBal.value / 1e9 : null;
-    S.ms.usdc = usdcOf(msTok);
+    S.ms.usdc = tokenUiAmount(msUsdc);
+    S.ms.usdt = tokenUiAmount(msUsdt);
     S.positions = traderPos;
     S.ms.positions = msPos;
     S.solPrice = solPrice;
@@ -941,12 +953,13 @@ async function init() {
     S.violations = checkCompliance(S.trades);
 
     // Wallet-over-budget check (current snapshot, keyed per week so approval auto-expires Monday)
-    const walletUsd = (S.sol||0) * (S.solPrice||0) + (S.usdc||0);
+    const walletUsd = (S.sol||0) * (S.solPrice||0) + (S.usdc||0) + (S.usdt||0);
     if (walletUsd > BUDGET_WEEKLY && S.solPrice) {
+      const usdtBit = S.usdt > 0 ? ` + $${S.usdt.toFixed(2)} USDT` : '';
       S.violations.unshift({
         type: 'WALLET', severity: 'alert', time: 0,
         sig: 'wallet:' + getWeekKey(new Date()),
-        detail: `Wallet $${walletUsd.toFixed(2)} · rule is $${BUDGET_WEEKLY} max release/week (${(S.sol||0).toFixed(2)} SOL @ $${S.solPrice.toFixed(2)} + $${(S.usdc||0).toFixed(2)} USDC)`
+        detail: `Wallet $${walletUsd.toFixed(2)} · rule is $${BUDGET_WEEKLY} max release/week (${(S.sol||0).toFixed(2)} SOL @ $${S.solPrice.toFixed(2)} + $${(S.usdc||0).toFixed(2)} USDC${usdtBit})`
       });
     }
     refreshApprovalState();
@@ -997,7 +1010,7 @@ function isInCooldown() {
   const weekSpent = S.trades.filter(t => t.weekKey === thisWeek).reduce((sum,t) => sum + (t.usdcIn||0), 0);
   if (weekSpent >= BUDGET_WEEKLY) return { reason: `Used $${weekSpent.toFixed(2)} of $${BUDGET_WEEKLY} weekly budget` };
   if (S.solPrice && S.sol !== null) {
-    const wallet = S.sol * S.solPrice + (S.usdc||0);
+    const wallet = S.sol * S.solPrice + (S.usdc||0) + (S.usdt||0);
     if (wallet < 10) return { reason: `Wallet depleted — $${wallet.toFixed(2)}` };
   }
   return null;
