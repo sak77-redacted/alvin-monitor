@@ -545,11 +545,29 @@ function renderOverview() {
   const todayPnl = todayTrades.reduce((s,t) => s + t.pnl, 0);
   const ydayPnl = ydayTrades.reduce((s,t) => s + t.pnl, 0);
 
+  // Clean-streak: time since the most recent timestamped violation, capped at the tracking start
+  const tsViolations = S.violations.filter(v => v.time > 0);
+  let streakLabel = 'today', streakUnit = 'tracking just started', streakColor = '#f59e0b';
+  const trackingMs = Date.now() - TRACKING_START * 1000;
+  if (!tsViolations.length) {
+    const d = Math.floor(trackingMs / 86400000);
+    streakLabel = d === 0 ? '<1d' : d + 'd';
+    streakUnit = d === 0 ? 'no violations yet' : 'no violations since tracking';
+    streakColor = d >= 1 ? '#22c55e' : '#f59e0b';
+  } else {
+    const recent = Math.max(...tsViolations.map(v => v.time));
+    const sinceMs = Date.now() - recent * 1000;
+    if (sinceMs < 3600000) { streakLabel = Math.max(1, Math.floor(sinceMs/60000)) + 'm'; streakUnit = 'since last violation'; streakColor = '#ef4444'; }
+    else if (sinceMs < 86400000) { streakLabel = Math.floor(sinceMs/3600000) + 'h'; streakUnit = 'since last violation'; streakColor = '#f59e0b'; }
+    else { const d = Math.floor(sinceMs/86400000); streakLabel = d + 'd'; streakUnit = 'clean'; streakColor = d >= 7 ? '#22c55e' : '#f59e0b'; }
+  }
+
   const cards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
     {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
+    {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
     {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
     {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
     {l:'Avg Size',v:'$'+avgTrade.toFixed(2),u:'per trade',c:'#f59e0b'},
@@ -620,9 +638,27 @@ function renderOverview() {
   $('tab-overview').innerHTML = html;
 }
 
+function downloadTradesCsv() {
+  const headers = ['Time UTC','Type','From','To','Amt In','Amt Out','P&L USD','Source','Signature'];
+  const rows = S.trades.map(t => [
+    new Date(t.time*1000).toISOString(),
+    t.type, t.tokenIn || '', t.tokenOut || '',
+    t.amtIn || 0, t.amtOut || 0, (t.pnl||0).toFixed(2),
+    t.source || '', t.sig,
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `alvin-trades-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderTrades() {
   if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
-  let html = `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
+  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
+  html += `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
     <th>Time</th><th>Type</th><th>From</th><th>To</th><th>Amt In</th><th>Amt Out</th><th>P&L</th><th>Flags</th><th>Sig</th>
   </tr></thead><tbody>`;
   
