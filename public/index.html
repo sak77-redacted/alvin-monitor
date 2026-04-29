@@ -136,9 +136,9 @@ const TOKEN_SYMBOLS = {
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
 };
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const HELIUS_KEY = "235a7270-8c96-4fba-8655-6d732e4ba772";
-const HELIUS = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`;
-const HELIUS_API = `https://api-mainnet.helius-rpc.com/v0/addresses/${W}/transactions?api-key=${HELIUS_KEY}`;
+// Helius calls go through our serverless proxy (api/helius.js); the API key
+// lives only in Vercel env, never in the client bundle.
+const HELIUS_PROXY = '/api/helius';
 const BUDGET_WEEKLY = 125;
 const BUDGET_MONTHLY = 500;
 const TRACKING_START = new Date('2026-04-28T00:00:00').getTime() / 1000; // tracking start (local), pre-existing activity excluded
@@ -200,7 +200,7 @@ async function fetchSolPrice() {
 async function rpc(method, params) {
   for (let i=0; i<3; i++) {
     try {
-      const r = await fetch(HELIUS, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});
+      const r = await fetch(HELIUS_PROXY, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});
       const d = await r.json();
       if (d.error) throw new Error(d.error.message);
       return d.result;
@@ -213,7 +213,7 @@ async function fetchAllTrades() {
   let all = [], lastSig = null, page = 0;
   setStatus('Fetching trades…');
   while (page < 10) { // max 1000 txns
-    let url = HELIUS_API + '&limit=100';
+    let url = `${HELIUS_PROXY}?address=${W}&limit=100`;
     if (lastSig) url += '&before=' + lastSig;
     const r = await fetch(url);
     if (!r.ok) throw new Error('Helius API: ' + r.status);
@@ -780,7 +780,7 @@ async function init() {
     renderAlerts();
     tickCooldown();
 
-    $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> connected via Helius';
+    $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> live';
     S.lastUpdated = Date.now();
     tickFreshness();
 
