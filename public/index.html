@@ -87,6 +87,7 @@
       <div class="tmain">Alvin <span>Trading Monitor</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <select id="who" onchange="saveIdentity(this.value)" style="background:#0f1923;border:1px solid #1e293b;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer"><option value="">? who are you</option><option value="alvin">I am Alvin</option><option value="ken">I am Ken</option></select>
       <span id="curfew" style="font-size:11px;color:#475569;padding:6px 10px;border:1px solid #1e293b;border-radius:6px;white-space:nowrap"></span>
       <div id="aBadge" class="abadge hidden"></div>
       <span id="statusDot" style="font-size:10px;color:#475569">● connecting</span>
@@ -150,7 +151,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, positions:[] } };
+let S = { sol:null, usdc:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, positions:[] }, approvals:{}, audit:[] };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -166,25 +167,67 @@ async function fetchPositions(addr) {
 
 const REFRESH_MS = 60_000; // auto-refresh interval
 
-// ─── Approvals (localStorage, keyed by type+sig+time) ───
+// ─── Identity (localStorage, used as the 'by' on each approval) ───
+function loadIdentity() { try { return localStorage.getItem('alvin_identity') || ''; } catch { return ''; } }
+function saveIdentity(v) { try { localStorage.setItem('alvin_identity', v); } catch {} rerenderApprovalUI(); }
+
+// ─── Approvals (Vercel KV, shared between Alvin and Ken) ───
 function violationKey(v) { return `${v.type}|${v.sig||''}|${v.time||0}`; }
-function loadApprovals() {
-  try { return new Set(JSON.parse(localStorage.getItem('alvin_approvals') || '[]')); }
-  catch { return new Set(); }
+function isApproved(key) { return !!S.approvals[key]; }
+function approvedBy(key) { return S.approvals[key]?.by; }
+
+async function fetchSharedApprovals() {
+  try {
+    const r = await fetch('/api/approvals');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.approvals = d.approvals || {};
+    S.audit = d.audit || [];
+  } catch {}
 }
-function saveApprovals(set) {
-  try { localStorage.setItem('alvin_approvals', JSON.stringify([...set])); } catch {}
-}
+
 function refreshApprovalState() {
-  const a = loadApprovals();
-  S.violations.forEach(v => v.approved = a.has(violationKey(v)));
+  S.violations.forEach(v => {
+    const k = violationKey(v);
+    v.approved = isApproved(k);
+    v.approvedBy = approvedBy(k);
+  });
 }
-function toggleApproval(key) {
-  const a = loadApprovals();
-  if (a.has(key)) a.delete(key); else a.add(key);
-  saveApprovals(a);
+
+function rerenderApprovalUI() {
   refreshApprovalState();
-  renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts(); tickCooldown();
+  if (typeof renderOverview === 'function') {
+    renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts(); tickCooldown();
+  }
+}
+
+async function toggleApproval(key) {
+  const by = loadIdentity();
+  if (!by) {
+    alert('Pick your identity (Alvin or Ken) at the top right first.');
+    return;
+  }
+  const action = isApproved(key) ? 'unapprove' : 'approve';
+  const at = Date.now();
+  // optimistic local update
+  if (action === 'approve') S.approvals[key] = { by, at };
+  else delete S.approvals[key];
+  S.audit.unshift({ action, key, by, at });
+  rerenderApprovalUI();
+  try {
+    const r = await fetch('/api/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, key, by }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    // rollback on failure
+    if (action === 'approve') delete S.approvals[key];
+    else S.approvals[key] = { by:'?', at:0 };
+    rerenderApprovalUI();
+    alert('Failed to save: ' + e.message);
+  }
 }
 
 // ─── SOL price (CoinGecko, no key) ───
@@ -404,7 +447,7 @@ function tradeCheck() {
     const wallet = S.sol * S.solPrice + (S.usdc||0);
     if (wallet > BUDGET_WEEKLY) {
       const walletKey = `WALLET|wallet:${getWeekKey(new Date())}|0`;
-      const approved = loadApprovals().has(walletKey);
+      const approved = isApproved(walletKey);
       checks.push(approved
         ? { ok:'warn', name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} (approved by you)` }
         : { ok:false, name:'Wallet size', reason:`Wallet $${wallet.toFixed(2)} > $${BUDGET_WEEKLY} · approve in Compliance to proceed` });
@@ -581,8 +624,9 @@ function renderCompliance() {
       const colors = { alert:'#ef4444', warn:'#f59e0b', info:'#3b82f6' };
       const k = violationKey(v);
       const isTradeSig = v.sig && !v.sig.startsWith('wallet:') && !v.sig.startsWith('budget:');
+      const byLabel = v.approvedBy ? ` by ${v.approvedBy}` : '';
       const approveBtn = v.approved
-        ? `<button onclick="toggleApproval('${k}')" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ approved · undo</button>`
+        ? `<button onclick="toggleApproval('${k}')" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ approved${byLabel} · undo</button>`
         : `<button onclick="toggleApproval('${k}')" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">approve</button>`;
       html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:center;${v.approved?'opacity:.45':''}">
         <span class="tag" style="background:${colors[v.severity]}20;color:${colors[v.severity]};min-width:60px;text-align:center">${v.type}</span>
@@ -594,7 +638,20 @@ function renderCompliance() {
   } else {
     html += '<div class="panel" style="text-align:center;color:#22c55e;padding:20px">✓ No violations detected</div>';
   }
-  
+
+  // Audit log — every approval/unapproval ever recorded, newest first
+  if (S.audit?.length) {
+    html += `<div class="panel"><div class="pl">Audit Log · ${S.audit.length} ${S.audit.length === 1 ? 'entry' : 'entries'}</div><div style="max-height:300px;overflow-y:auto">`;
+    for (const a of S.audit.slice(0, 100)) {
+      const isApprove = a.action === 'approve';
+      const c = isApprove ? '#22c55e' : '#94a3b8';
+      const verb = isApprove ? 'approved' : 'unapproved';
+      const type = (a.key || '').split('|')[0] || '?';
+      html += `<div style="padding:6px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:center"><span style="color:${c};font-weight:600;min-width:90px"><strong>${a.by||'?'}</strong> ${verb}</span><span style="color:#64748b;font-family:inherit;font-size:10px">${type}</span><span style="color:#475569;flex:1;text-align:right;font-size:10px">${a.at?fmtT(a.at/1000)+' · '+ago(a.at/1000):''}</span></div>`;
+    }
+    html += '</div></div>';
+  }
+
   $('tab-compliance').innerHTML = html;
 }
 
@@ -720,7 +777,7 @@ async function init() {
   $('pBar').style.width = '10%';
   
   try {
-    // Balances + positions for trader and multisig, in parallel
+    // Balances + positions for trader and multisig + shared approvals, in parallel
     setStatus('Fetching balances & positions…');
     const usdcOf = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
     const [tBal, tTok, msBal, msTok, traderPos, msPos, solPrice] = await Promise.all([
@@ -731,6 +788,7 @@ async function init() {
       fetchPositions(W),
       fetchPositions(MS),
       fetchSolPrice(),
+      fetchSharedApprovals(),
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = usdcOf(tTok);
@@ -803,11 +861,9 @@ function getNextMonday() {
   return mon;
 }
 function getCooldownKey() { return `COOLDOWN|cooldown:${getWeekKey(new Date())}|0`; }
-function overrideCooldown() {
-  const a = loadApprovals(); a.add(getCooldownKey()); saveApprovals(a); tickCooldown();
-}
+function overrideCooldown() { return toggleApproval(getCooldownKey()); }
 function isInCooldown() {
-  if (loadApprovals().has(getCooldownKey())) return null;
+  if (isApproved(getCooldownKey())) return null;
   const thisWeek = getWeekKey(new Date());
   const weekSpent = S.trades.filter(t => t.weekKey === thisWeek).reduce((sum,t) => sum + (t.usdcIn||0), 0);
   if (weekSpent >= BUDGET_WEEKLY) return { reason: `Used $${weekSpent.toFixed(2)} of $${BUDGET_WEEKLY} weekly budget` };
@@ -866,6 +922,7 @@ function tickFreshness() {
 setInterval(tickFreshness, 1000);
 setInterval(() => { if (!$('rBtn').disabled && document.visibilityState === 'visible') init(); }, REFRESH_MS);
 
+$('who').value = loadIdentity();
 renderRules();
 init();
 </script>
