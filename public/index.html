@@ -452,10 +452,10 @@ function renderOverview() {
   // Pre-trade self-check
   const checks = tradeCheck();
   const blocked = checks.filter(c => c.ok === false);
-  const warns = checks.filter(c => c.ok === 'warn');
+  const cautions = checks.filter(c => c.ok === 'warn');
   const verdict = blocked.length
     ? { color:'#ef4444', bg:'#dc262610', icon:'✗', text:`NO · ${blocked.length} blocking` }
-    : warns.length
+    : cautions.length
     ? { color:'#f59e0b', bg:'#f59e0b10', icon:'⚠', text:'PROCEED WITH CAUTION' }
     : { color:'#22c55e', bg:'#22c55e10', icon:'✓', text:'GO · all clear' };
   html += `<div class="panel" style="border-left:3px solid ${verdict.color};background:${verdict.bg}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">Pre-trade check</div><div style="font-size:14px;font-weight:700;color:${verdict.color}">${verdict.icon} ${verdict.text}</div></div>`;
