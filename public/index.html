@@ -108,6 +108,7 @@
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
 <div id="staleBanner" class="abanner hidden" style="background:#f59e0b15;border:1px solid #f59e0b"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px">⏱ DATA STALE</div><div id="staleDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="init()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">retry now</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
+<div id="bannerCycle" class="hidden" onclick="cycleBanner()" style="margin:6px 24px 0;padding:6px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;font-size:11px;color:#94a3b8;cursor:pointer;text-align:center"></div>
 
 <div class="tabs">
   <button class="tab active" onclick="stab('overview',this)">Overview</button>
@@ -170,6 +171,32 @@ async function fetchPositions(addr) {
 
 const REFRESH_MS = 60_000; // auto-refresh interval
 
+// ─── Banner coordinator — show only the highest-priority active banner at a time ───
+const BANNER_PRIORITY = ['cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
+let _bannerCycleIdx = 0;
+function setBanner(id, on) {
+  const el = $(id); if (!el) return;
+  if (on) el.dataset.active = '1'; else delete el.dataset.active;
+  applyBanners();
+}
+function applyBanners() {
+  const active = BANNER_PRIORITY.filter(id => $(id)?.dataset?.active === '1');
+  BANNER_PRIORITY.forEach(id => $(id)?.classList.add('hidden'));
+  const cycle = $('bannerCycle');
+  if (!active.length) { cycle?.classList.add('hidden'); return; }
+  if (_bannerCycleIdx >= active.length) _bannerCycleIdx = 0;
+  $(active[_bannerCycleIdx])?.classList.remove('hidden');
+  if (cycle) {
+    if (active.length > 1) {
+      cycle.classList.remove('hidden');
+      cycle.textContent = `↻ alert ${_bannerCycleIdx + 1} of ${active.length} · click to cycle`;
+    } else {
+      cycle.classList.add('hidden');
+    }
+  }
+}
+function cycleBanner() { _bannerCycleIdx++; applyBanners(); }
+
 // ─── Identity (localStorage, used as the 'by' on each approval) ───
 function loadIdentity() { try { return localStorage.getItem('alvin_identity') || ''; } catch { return ''; } }
 function saveIdentity(v) { try { localStorage.setItem('alvin_identity', v); } catch {} rerenderApprovalUI(); }
@@ -180,29 +207,29 @@ const WALLET_DELTA_THRESHOLD_PCT = 25;
 function loadLastSeenWallet() { try { return JSON.parse(localStorage.getItem('alvin_last_seen_wallet') || 'null'); } catch { return null; } }
 function saveLastSeenWallet(snap) { try { localStorage.setItem('alvin_last_seen_wallet', JSON.stringify(snap)); } catch {} }
 function checkWalletDelta() {
-  const banner = $('walletDeltaBanner'); if (!banner) return;
-  if (S.solPrice == null || S.sol == null) { banner.classList.add('hidden'); return; }
+  if (!$('walletDeltaBanner')) return;
+  if (S.solPrice == null || S.sol == null) { setBanner('walletDeltaBanner', false); return; }
   const walletUsd = S.sol * S.solPrice + (S.usdc || 0) + (S.usdt || 0);
   const lastSeen = loadLastSeenWallet();
-  if (!lastSeen) { saveLastSeenWallet({ walletUsd, at: Date.now() }); banner.classList.add('hidden'); return; }
+  if (!lastSeen) { saveLastSeenWallet({ walletUsd, at: Date.now() }); setBanner('walletDeltaBanner', false); return; }
   const delta = walletUsd - lastSeen.walletUsd;
   const pct = lastSeen.walletUsd > 0 ? (delta / lastSeen.walletUsd) * 100 : 0;
   if (Math.abs(delta) >= WALLET_DELTA_THRESHOLD_USD || Math.abs(pct) >= WALLET_DELTA_THRESHOLD_PCT) {
     S.walletDelta = { walletUsd, prev: lastSeen.walletUsd, delta, pct };
-    banner.classList.remove('hidden');
     const sign = delta >= 0 ? '+' : '';
     const since = ago(lastSeen.at / 1000);
     $('walletDeltaDetail').textContent = `$${lastSeen.walletUsd.toFixed(2)} → $${walletUsd.toFixed(2)} (${sign}$${delta.toFixed(2)} · ${sign}${pct.toFixed(1)}%) since ${since||'just now'} ago`;
+    setBanner('walletDeltaBanner', true);
   } else {
     S.walletDelta = null;
-    banner.classList.add('hidden');
+    setBanner('walletDeltaBanner', false);
   }
 }
 function acknowledgeWalletDelta() {
   if (!S.walletDelta) return;
   saveLastSeenWallet({ walletUsd: S.walletDelta.walletUsd, at: Date.now() });
   S.walletDelta = null;
-  $('walletDeltaBanner').classList.add('hidden');
+  setBanner('walletDeltaBanner', false);
 }
 
 // ─── Approvals (Vercel KV, shared between Alvin and Ken) ───
@@ -908,17 +935,17 @@ function renderAlerts() {
   if (critical.length) {
     $('aBadge').classList.remove('hidden');
     $('aBadge').textContent = '⚠ ' + critical.length + ' ALERT' + (critical.length>1?'S':'');
-    $('aBanner').classList.remove('hidden');
     $('aDetails').innerHTML = critical.slice(0,5).map(v => `<div style="margin-bottom:4px">• <strong>${v.type}</strong>: ${v.detail}</div>`).join('');
+    setBanner('aBanner', true);
   } else {
     $('aBadge').classList.add('hidden');
-    $('aBanner').classList.add('hidden');
+    setBanner('aBanner', false);
   }
 }
 
 // ─── Main ───
 async function init() {
-  $('errBar').classList.add('hidden');
+  setBanner('errBar', false);
   $('pWrap').classList.remove('hidden');
   $('rBtn').disabled = true;
   $('pBar').style.width = '10%';
@@ -996,7 +1023,7 @@ async function init() {
     tickFreshness();
 
   } catch(e) {
-    $('errBar').classList.remove('hidden');
+    setBanner('errBar', true);
     $('errMsg').textContent = e.message;
     $('statusDot').innerHTML = '<span style="color:#ef4444">●</span> error';
   }
@@ -1027,10 +1054,10 @@ function isInCooldown() {
   return null;
 }
 function tickCooldown() {
-  const banner = $('cooldownBanner'); if (!banner) return;
+  if (!$('cooldownBanner')) return;
   const cd = isInCooldown();
-  if (!cd) { banner.classList.add('hidden'); return; }
-  banner.classList.remove('hidden');
+  if (!cd) { setBanner('cooldownBanner', false); return; }
+  setBanner('cooldownBanner', true);
   const next = getNextMonday();
   const ms = next.getTime() - Date.now();
   const days = Math.floor(ms/86400000);
@@ -1082,13 +1109,12 @@ function tickFreshness() {
   const stale = secs > REFRESH_MS/1000 * 2;
   $('updAt').innerHTML = `Updated <span style="color:${stale?'#f59e0b':'#475569'}">${rel}</span>`;
   // Surface a banner when refresh has been silently failing for more than 5 min.
-  const banner = $('staleBanner');
-  if (banner) {
+  if ($('staleBanner')) {
     if (secs > 300) {
-      banner.classList.remove('hidden');
       $('staleDetail').textContent = `Last successful refresh ${rel}. Auto-refresh runs every ${REFRESH_MS/1000}s — check the network or click Refresh.`;
+      setBanner('staleBanner', true);
     } else {
-      banner.classList.add('hidden');
+      setBanner('staleBanner', false);
     }
   }
 }
