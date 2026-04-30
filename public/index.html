@@ -563,18 +563,20 @@ function renderOverview() {
     else { const d = Math.floor(sinceMs/86400000); streakLabel = d + 'd'; streakUnit = 'clean'; streakColor = d >= 7 ? '#22c55e' : '#f59e0b'; }
   }
 
-  const cards = [
+  const primaryCards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
     ...(S.usdt > 0 ? [{l:'USDT',v:S.usdt.toFixed(2),u:'balance',c:'#26a17b'}] : []),
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
-    {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
     {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
+    {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
+  ];
+  const secondaryCards = [
+    {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
     {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
     {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
     {l:'Avg Size',v:'$'+avgTrade.toFixed(2),u:'per trade',c:'#f59e0b'},
     {l:'Volume',v:'$'+totalVol.toFixed(2),u:'total traded',c:'#06b6d4'},
-    {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
   
   const solValue = (S.sol||0) * (S.solPrice||0);
@@ -584,9 +586,21 @@ function renderOverview() {
   const breakdown = S.solPrice
     ? `${(S.sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(S.usdc||0).toFixed(2)} USDC${usdtPart} · SOL @ $${S.solPrice.toFixed(2)}`
     : `${(S.sol||0).toFixed(4)} SOL + $${(S.usdc||0).toFixed(2)} USDC${usdtPart} · SOL price unavailable`;
-  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown}</div></div>`;
+  // Compute pre-trade verdict early so it can drive the status hero up top.
+  const checks = tradeCheck();
+  const blocked = checks.filter(c => c.ok === false);
+  const cautions = checks.filter(c => c.ok === 'warn');
+  const verdict = blocked.length
+    ? { color:'#ef4444', bg:'#dc262615', icon:'✗', text:`NO · ${blocked.length} blocking`, headline: blocked.map(c => c.reason).slice(0,2).join(' · ') }
+    : cautions.length
+    ? { color:'#f59e0b', bg:'#f59e0b15', icon:'⚠', text:'PROCEED WITH CAUTION', headline: cautions.map(c => c.reason).slice(0,2).join(' · ') }
+    : { color:'#22c55e', bg:'#22c55e15', icon:'✓', text:'GO · all clear', headline: 'curfew clear · cooldown clear · wallet OK · no recent loss' };
+
+  // STATUS HERO — answers "can Alvin trade right now?" + "what's the wallet worth?" in one glance
+  const cardRender = c => `<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`;
+  let html = `<div class="panel" style="background:linear-gradient(135deg,${verdict.bg},#1a1f35);border-left:4px solid ${verdict.color};padding:18px 20px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:18px"><div style="flex:1;min-width:220px"><div style="font-size:clamp(16px,3.6vw,20px);font-weight:700;color:${verdict.color};letter-spacing:.5px">${verdict.icon} ${verdict.text}</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.45">${verdict.headline}</div></div><div style="text-align:right"><div class="cl">Wallet Value</div><div style="font-size:clamp(22px,5.5vw,30px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:10px;color:#64748b;margin-top:2px;line-height:1.4">${breakdown}</div></div></div></div>`;
   html += renderPositionsPanel(S.positions);
-  html += `<div class="cards">${cards.map(c=>`<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`).join('')}</div>`;
+  html += `<div class="cards">${primaryCards.map(cardRender).join('')}</div>`;
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
   if (haveBalances) {
@@ -597,22 +611,19 @@ function renderOverview() {
     html += `<div class="panel"><div class="pl">Budget: $${wallet.toFixed(2)} / $${BUDGET_WEEKLY} weekly · tracking from ${trackLabel}</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${wallet.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(wallet-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-wallet).toFixed(2)+' remaining'}</span></div></div>`;
   }
   
-  // Pre-trade self-check
-  const checks = tradeCheck();
-  const blocked = checks.filter(c => c.ok === false);
-  const cautions = checks.filter(c => c.ok === 'warn');
-  const verdict = blocked.length
-    ? { color:'#ef4444', bg:'#dc262610', icon:'✗', text:`NO · ${blocked.length} blocking` }
-    : cautions.length
-    ? { color:'#f59e0b', bg:'#f59e0b10', icon:'⚠', text:'PROCEED WITH CAUTION' }
-    : { color:'#22c55e', bg:'#22c55e10', icon:'✓', text:'GO · all clear' };
-  html += `<div class="panel" style="border-left:3px solid ${verdict.color};background:${verdict.bg}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">Pre-trade check</div><div style="font-size:14px;font-weight:700;color:${verdict.color}">${verdict.icon} ${verdict.text}</div></div>`;
+  // Pre-trade check details — verdict is already in the status hero up top, so this panel
+  // is just the per-check breakdown ("why").
+  html += `<div class="panel"><div class="pl" style="margin-bottom:8px">Pre-trade check · why</div>`;
   html += checks.map(c => {
     const i = c.ok === true ? '✓' : c.ok === 'warn' ? '⚠' : '✗';
     const co = c.ok === true ? '#22c55e' : c.ok === 'warn' ? '#f59e0b' : '#ef4444';
     return `<div style="padding:5px 0;font-size:11px;display:flex;gap:10px;align-items:flex-start"><span style="color:${co};font-weight:700;width:14px;flex-shrink:0">${i}</span><span style="color:#94a3b8;min-width:100px;flex-shrink:0">${c.name}</span><span style="color:#64748b;flex:1">${c.reason}</span></div>`;
   }).join('');
   html += `</div>`;
+
+  // Secondary cards — all-time stats, deprioritised below the actionable stuff.
+  html += `<div class="pl" style="margin:18px 0 8px;color:#475569">All-time stats</div>`;
+  html += `<div class="cards">${secondaryCards.map(cardRender).join('')}</div>`;
 
   // Recent trades
   html += `<div class="panel"><div class="pl">Last 5 Trades</div>`;
