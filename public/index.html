@@ -76,6 +76,16 @@
   @media (max-width:380px){
     .cards{grid-template-columns:1fr}
   }
+  /* On phones, dense tables become stacked cards; tds use data-label as the field name */
+  @media (max-width:640px){
+    .table-cards table,.table-cards tbody,.table-cards tr{display:block;width:100%}
+    .table-cards thead{display:none}
+    .table-cards tr{background:#0f1923;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;margin-bottom:8px}
+    .table-cards td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0!important;border-bottom:1px solid #1e293b!important;font-size:11px}
+    .table-cards td:last-child{border-bottom:none!important}
+    .table-cards td::before{content:attr(data-label);color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:1px;flex-shrink:0}
+    .table-cards td:empty,.table-cards td[data-label=""]{display:none}
+  }
 </style>
 </head>
 <body>
@@ -706,7 +716,7 @@ function downloadTradesCsv() {
 function renderTrades() {
   if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
   let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
-  html += `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
+  html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
     <th>Time</th><th>Type</th><th>From</th><th>To</th><th>Amt In</th><th>Amt Out</th><th>P&L</th><th>Flags</th><th>Sig</th>
   </tr></thead><tbody>`;
   
@@ -721,15 +731,15 @@ function renderTrades() {
     });
     
     html += `<tr class="${viol.some(v=>v.severity==='alert')?'ext-row':''}">
-      <td style="color:#94a3b8;white-space:nowrap">${fmtT(t.time)}</td>
-      <td><span class="tag" style="background:#8b5cf620;color:#8b5cf6">${t.type}</span></td>
-      <td style="color:#ef4444">${t.tokenIn||'—'}</td>
-      <td style="color:#22c55e">${t.tokenOut||'—'}</td>
-      <td style="font-variant-numeric:tabular-nums">${t.amtIn?t.amtIn.toFixed(t.amtIn<1?6:2):''}</td>
-      <td style="font-variant-numeric:tabular-nums">${t.amtOut?t.amtOut.toFixed(t.amtOut<1?6:2):''}</td>
-      <td class="${pnlClass(t.pnl)}" style="font-weight:600">${t.pnl!==0?pnlStr(t.pnl):'—'}</td>
-      <td>${flags.join(' ')||'—'}</td>
-      <td><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
+      <td data-label="Time" style="color:#94a3b8;white-space:nowrap">${fmtT(t.time)}</td>
+      <td data-label="Type"><span class="tag" style="background:#8b5cf620;color:#8b5cf6">${t.type}</span></td>
+      <td data-label="From" style="color:#ef4444">${t.tokenIn||'—'}</td>
+      <td data-label="To" style="color:#22c55e">${t.tokenOut||'—'}</td>
+      <td data-label="Amt In" style="font-variant-numeric:tabular-nums">${t.amtIn?t.amtIn.toFixed(t.amtIn<1?6:2):''}</td>
+      <td data-label="Amt Out" style="font-variant-numeric:tabular-nums">${t.amtOut?t.amtOut.toFixed(t.amtOut<1?6:2):''}</td>
+      <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.pnl!==0?pnlStr(t.pnl):'—'}</td>
+      <td data-label="Flags">${flags.join(' ')||'—'}</td>
+      <td data-label="Sig"><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
     </tr>`;
   }
   html += '</tbody></table></div></div>';
@@ -830,20 +840,20 @@ function renderWeekly() {
   if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
   let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
-  html += `<div class="panel" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
+  html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
     <th>Week</th><th>Trades</th><th>Volume</th><th>P&L</th><th>Win Rate</th><th>Budget Status</th>
   </tr></thead><tbody>`;
-  
+
   for (const w of S.weeklyData) {
     const wr = w.count > 0 ? (w.wins/w.count*100) : 0;
     const overBudget = w.volume > BUDGET_WEEKLY;
     html += `<tr class="${overBudget?'ext-row':''}">
-      <td style="color:#94a3b8;white-space:nowrap">${w.key}</td>
-      <td>${w.count}</td>
-      <td style="font-variant-numeric:tabular-nums">$${w.volume.toFixed(2)}</td>
-      <td class="${pnlClass(w.totalPnl)}" style="font-weight:600">${pnlStr(w.totalPnl)}</td>
-      <td style="color:${wr>=50?'#22c55e':'#ef4444'}">${wr.toFixed(0)}%</td>
-      <td>${overBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+(w.volume-BUDGET_WEEKLY).toFixed(2)+')</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
+      <td data-label="Week" style="color:#94a3b8;white-space:nowrap">${w.key}</td>
+      <td data-label="Trades">${w.count}</td>
+      <td data-label="Volume" style="font-variant-numeric:tabular-nums">$${w.volume.toFixed(2)}</td>
+      <td data-label="P&L" class="${pnlClass(w.totalPnl)}" style="font-weight:600">${pnlStr(w.totalPnl)}</td>
+      <td data-label="Win Rate" style="color:${wr>=50?'#22c55e':'#ef4444'}">${wr.toFixed(0)}%</td>
+      <td data-label="Budget">${overBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+(w.volume-BUDGET_WEEKLY).toFixed(2)+')</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
     </tr>`;
   }
   html += '</tbody></table></div></div>';
