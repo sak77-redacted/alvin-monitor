@@ -167,7 +167,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[] };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[] };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -274,6 +274,33 @@ async function fetchSharedApprovals() {
     const d = await r.json();
     S.approvals = d.approvals || {};
     S.audit = d.audit || [];
+  } catch {}
+}
+
+async function fetchSamples() {
+  try {
+    const r = await fetch('/api/samples?limit=2000');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.samples = d.samples || [];
+  } catch {}
+}
+
+async function postSample() {
+  if (S.solPrice == null || S.sol == null) return;
+  const wallet = S.sol * S.solPrice + (S.usdc || 0) + (S.usdt || 0);
+  const realised = S.trades.filter(t => t.action !== 'Open').reduce((s, t) => s + (t.pnl || 0), 0);
+  const unrealised = S.positions.reduce((s, p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
+  const total = realised + unrealised;
+  const entry = { at: Date.now(), realised, unrealised, total, wallet };
+  // Optimistic local append so the chart shows the new point without a re-fetch.
+  S.samples.push(entry);
+  try {
+    await fetch('/api/samples', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
   } catch {}
 }
 
@@ -953,7 +980,11 @@ function renderPositionCard(p) {
 function renderEquityCurve() {
   const closes = S.trades.filter(t => t.action !== 'Open').sort((a, b) => a.time - b.time);
   const unrealised = S.positions.reduce((s, p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
-  if (!closes.length && Math.abs(unrealised) < 0.01) return '';
+  // KV-backed samples (in seconds): {at(ms), realised, unrealised, total}
+  const samples = (S.samples || []).map(s => ({ t: Math.floor(s.at / 1000), total: s.total, realised: s.realised, unrealised: s.unrealised }))
+    .filter(s => s.t >= TRACKING_START)
+    .sort((a, b) => a.t - b.t);
+  if (!closes.length && Math.abs(unrealised) < 0.01 && !samples.length) return '';
 
   let cum = 0;
   const realisedPts = [{ t: TRACKING_START, v: 0, close: null }];
@@ -965,13 +996,14 @@ function renderEquityCurve() {
   const hasTail = Math.abs(unrealised) > 0.01;
   const tail = hasTail ? { t: nowSec, v: totalNow } : lastRealised;
 
-  // Bounds
-  const ys = realisedPts.map(p => p.v).concat([tail.v, 0]);
+  // Bounds — include sample extremes so historical peaks/troughs are visible
+  const sampleVals = samples.map(s => s.total);
+  const ys = realisedPts.map(p => p.v).concat([tail.v, 0]).concat(sampleVals);
   const yMin = Math.min(...ys), yMax = Math.max(...ys);
   const yPad = Math.max((yMax - yMin) * 0.18, 5);
   const yLo = yMin - yPad, yHi = yMax + yPad;
   const tMin = realisedPts[0].t;
-  const tMax = Math.max(tail.t, realisedPts[realisedPts.length - 1].t);
+  const tMax = Math.max(tail.t, realisedPts[realisedPts.length - 1].t, ...(samples.length ? [samples[samples.length - 1].t] : []));
   const tPad = Math.max((tMax - tMin) * 0.03, 1800);
   const xMin = tMin - tPad, xMax = tMax + tPad;
 
@@ -984,6 +1016,11 @@ function renderEquityCurve() {
   const realisedPath = realisedPts.map((p, i) => `${i ? 'L' : 'M'} ${sx(p.t).toFixed(1)},${sy(p.v).toFixed(1)}`).join(' ');
   const unrealisedPath = hasTail
     ? `M ${sx(lastRealised.t).toFixed(1)},${sy(lastRealised.v).toFixed(1)} L ${sx(tail.t).toFixed(1)},${sy(tail.v).toFixed(1)}`
+    : '';
+  // Total-equity line built from KV-stored samples — captures historical
+  // unrealised peaks/troughs that the closes-only realised line can't show.
+  const samplePath = samples.length > 1
+    ? samples.map((s, i) => `${i ? 'L' : 'M'} ${sx(s.t).toFixed(1)},${sy(s.total).toFixed(1)}`).join(' ')
     : '';
   const fillPath = realisedPath
     + (hasTail ? ` L ${sx(tail.t).toFixed(1)},${sy(tail.v).toFixed(1)}` : '')
@@ -1036,14 +1073,15 @@ function renderEquityCurve() {
       </defs>
       ${grid}
       <path d="${fillPath}" fill="url(#eqGradient)" stroke="none"/>
-      <path d="${realisedPath}" fill="none" stroke="${realisedLineCol}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${realisedPath}" fill="none" stroke="${realisedLineCol}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="${samplePath ? '0.55' : '1'}"/>
       ${unrealisedPath ? `<path d="${unrealisedPath}" fill="none" stroke="${unrealisedLineCol}" stroke-width="2" stroke-dasharray="6 5" opacity="0.75"/>` : ''}
+      ${samplePath ? `<path d="${samplePath}" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>` : ''}
       ${closeDots}
       ${nowDot}
       ${yLabels}
       ${xLabels}
     </svg>
-    <div style="font-size:10px;color:#475569;margin-top:8px">Solid line = realised P&L stepping through each close. Dashed tail = current unrealised mark-to-market on open positions (a single 'now' snapshot — historical peaks before the dashboard was tracking aren't captured). Dots mark closes; liquidations are larger and red.</div>
+    <div style="font-size:10px;color:#475569;margin-top:8px">Green/red line = realised P&L stepping through each close. Blue line = total equity (realised + unrealised) sampled on every refresh, so unrealised peaks and troughs between closes show up once the dashboard has been running. Samples to date: ${samples.length}. Dots mark closes; liquidations are larger and red.</div>
   </div>`;
 }
 
@@ -1112,6 +1150,7 @@ async function init() {
       fetchSolPrice(),
       fetchPerpsTrades(W).catch(() => []),
       fetchSharedApprovals(), // side-effect only, not destructured
+      fetchSamples(),         // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
@@ -1164,6 +1203,7 @@ async function init() {
     $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> live';
     S.lastUpdated = Date.now();
     tickFreshness();
+    postSample(); // captures realised/unrealised snapshot for the equity-curve history
 
   } catch(e) {
     setBanner('errBar', true);
