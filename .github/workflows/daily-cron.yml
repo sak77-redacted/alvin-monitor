@@ -1,0 +1,34 @@
+name: daily-cron
+
+# Sends a morning recap WhatsApp to both Alvin + Ken at 9am HKT.
+# 9am HKT (UTC+8, no DST) = 01:00 UTC.
+#
+# Reuses the existing CRON_SECRET (same value as the 5-min check + weekly digest).
+
+on:
+  schedule:
+    - cron: '0 1 * * *'    # 01:00 UTC = 09:00 HKT, every day
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hit /api/cron/daily
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret missing"; exit 1
+          fi
+          response=$(curl -sS -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "https://alvin-monitor.vercel.app/api/cron/daily")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::daily endpoint returned $status"; exit 1
+          fi

@@ -97,14 +97,19 @@ function fmtDate(ts) {
 }
 
 function composeDigest({ trades, positions, approvals, journal, settings, weekStart, weekEnd, daysCovered }) {
-  // Aggregate stats over the week's closes
-  const closes = trades.filter(t => t.action === 'Decrease' && t.createdTime >= weekStart && t.createdTime < weekEnd);
+  // Aggregate stats over the week. Every Increase + Decrease event pays a fee,
+  // so the real cost-of-trading is the sum across all events, not just closes.
+  const inWindow = trades.filter(t => t.createdTime >= weekStart && t.createdTime < weekEnd);
+  const closes = inWindow.filter(t => t.action === 'Decrease');
+  const opens = inWindow.filter(t => t.action === 'Increase');
   const wins = closes.filter(t => num(t.pnl) > 0).length;
   const losses = closes.filter(t => num(t.pnl) < 0).length;
   const liqs = closes.filter(t => t.orderType === 'Liquidation').length;
   const totalPnl = closes.reduce((s, t) => s + num(t.pnl), 0);
   const winRate = closes.length ? Math.round(wins / closes.length * 100) : 0;
-  const totalFees = closes.reduce((s, t) => s + num(t.fee), 0);
+  const feesOpens = opens.reduce((s, t) => s + num(t.fee), 0);
+  const feesCloses = closes.reduce((s, t) => s + num(t.fee), 0);
+  const totalFees = feesOpens + feesCloses;
 
   // Top exit reasons from journal entries that pertain to this week's closes
   const sigsThisWeek = new Set(closes.map(c => c.txHash));
@@ -140,7 +145,8 @@ function composeDigest({ trades, positions, approvals, journal, settings, weekSt
     `Realised P&L: ${pnlStr(totalPnl)}${totalPnl <= -BUDGET_WEEKLY ? ' ⚠ over loss budget' : ''}`,
     `Closes: ${closes.length} · ${wins}W / ${losses}L · win rate ${winRate}%`,
     `Liquidations: ${liqs}${liqs >= 3 ? ' ⚠' : ''}`,
-    `Fees paid: -$${totalFees.toFixed(2)}`,
+    `Fees paid: -$${totalFees.toFixed(2)} (open -$${feesOpens.toFixed(2)} · close -$${feesCloses.toFixed(2)})`,
+    `P&L net of fees: ${pnlStr(totalPnl - totalFees)}`,
     ``,
     `Open positions: ${positions.length}${openSummary ? '\n' + openSummary : ''}`,
     ``,
