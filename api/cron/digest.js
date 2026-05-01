@@ -57,12 +57,19 @@ async function shouldSkip(dedupKey, ttlSec) {
 async function markSent(dedupKey) {
   if (dedupKey) await kvCmd(['HSET', NOTIF_KEY, dedupKey, String(Date.now())]);
 }
+// CallMeBot's backend appears to pipe message text through a shell, so $N
+// patterns (where N is a digit) get expanded as bash positional args — `$0`
+// becomes /system/bin/sh, `$300` becomes $3 + "00" → "00", etc. Insert a
+// zero-width space between `$` and any digit; renders identically in
+// WhatsApp but isn't a valid shell var.
+function shellSafe(s) { return String(s).replace(/\$(\d)/g, '$​$1'); }
+
 async function sendWA(to, message) {
   const phoneVar = to === 'alvin' ? 'WHATSAPP_ALVIN_PHONE' : 'WHATSAPP_KEN_PHONE';
   const keyVar = to === 'alvin' ? 'WHATSAPP_ALVIN_KEY' : 'WHATSAPP_KEN_KEY';
   const phone = process.env[phoneVar], key = process.env[keyVar];
   if (!phone || !key) return { ok: false };
-  const text = String(message).slice(0, 1500).trim(); // CallMeBot tolerates ~4000 chars; cap at 1500 for readability
+  const text = shellSafe(String(message).slice(0, 1500).trim());
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(key)}`;
   try {
     const r = await fetch(url);
@@ -89,7 +96,7 @@ function fmtDate(ts) {
   return new Date(ts * 1000).toLocaleDateString('en-AU', { timeZone: 'Australia/Sydney', day: 'numeric', month: 'short' });
 }
 
-function composeDigest({ trades, positions, approvals, journal, settings, weekStart, weekEnd }) {
+function composeDigest({ trades, positions, approvals, journal, settings, weekStart, weekEnd, daysCovered }) {
   // Aggregate stats over the week's closes
   const closes = trades.filter(t => t.action === 'Decrease' && t.createdTime >= weekStart && t.createdTime < weekEnd);
   const wins = closes.filter(t => num(t.pnl) > 0).length;
@@ -128,7 +135,7 @@ function composeDigest({ trades, positions, approvals, journal, settings, weekSt
   const regime = settings.regime === 'trend' ? 'Trend (5x/10x)' : 'Consistent (2x/3x)';
 
   const lines = [
-    `📊 Weekly digest · week of ${fmtDate(weekStart)} – ${fmtDate(weekEnd - 1)}`,
+    `📊 Weekly digest · ${fmtDate(weekStart)} – ${fmtDate(weekEnd)} (last ${daysCovered}d)`,
     ``,
     `Realised P&L: ${pnlStr(totalPnl)}${totalPnl <= -BUDGET_WEEKLY ? ' ⚠ over loss budget' : ''}`,
     `Closes: ${closes.length} · ${wins}W / ${losses}L · win rate ${winRate}%`,
@@ -157,16 +164,14 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    // Last completed week: Monday 00:00 AEST → next Monday 00:00 AEST. We're firing
-    // at Monday 09:00 AEST, so the week ending = today's Monday 00:00 AEST.
-    const now = new Date();
-    const sydMidnight = new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }));
-    sydMidnight.setHours(0, 0, 0, 0);
-    // Walk back to most recent Monday in Sydney time
-    while (sydMidnight.getDay() !== 1) sydMidnight.setDate(sydMidnight.getDate() - 1);
-    const tzOffsetHours = (now.getTime() - new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' })).getTime()) / 3600000;
-    const weekEnd = Math.floor(sydMidnight.getTime() / 1000) + Math.round(tzOffsetHours * 3600);
-    const weekStart = weekEnd - 7 * 86400;
+    // Rolling 7 days ending now, floored at TRACKING_START. Avoids the timezone
+    // gymnastics of walking back to a specific weekday and the off-by-one bugs
+    // that come with it. The Monday 9am AEST cron schedule means this still
+    // amounts to ~last week's data when fired on schedule.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const weekEnd = nowSec;
+    const weekStart = Math.max(nowSec - 7 * 86400, TRACKING_START);
+    const daysCovered = Math.max(1, Math.round((weekEnd - weekStart) / 86400));
 
     // Dedup per (week-start) so accidental double-trigger of the workflow doesn't double-send
     const dedupKey = `digest:${new Date(weekStart * 1000).toISOString().slice(0, 10)}`;
@@ -183,7 +188,7 @@ export default async function handler(req, res) {
       fetchKvHash(SETTINGS_KEY),
     ]);
 
-    const message = composeDigest({ trades, positions, approvals, journal, settings, weekStart, weekEnd });
+    const message = composeDigest({ trades, positions, approvals, journal, settings, weekStart, weekEnd, daysCovered });
     const result = await sendWA('ken', message);
     if (result.ok) await markSent(dedupKey);
 

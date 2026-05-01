@@ -70,12 +70,17 @@ async function markSent(dedupKey) {
   if (!dedupKey) return;
   await kvCmd(['HSET', NOTIF_KEY, dedupKey, String(Date.now())]);
 }
+// CallMeBot's backend pipes message text through a shell — $N patterns get
+// bash-expanded as positional args. Insert a zero-width space between $ and
+// any digit; renders identically in WhatsApp but isn't a valid shell var.
+function shellSafe(s) { return String(s).replace(/\$(\d)/g, '$​$1'); }
+
 async function sendWA(to, message) {
   const phoneVar = to === 'alvin' ? 'WHATSAPP_ALVIN_PHONE' : 'WHATSAPP_KEN_PHONE';
   const keyVar = to === 'alvin' ? 'WHATSAPP_ALVIN_KEY' : 'WHATSAPP_KEN_KEY';
   const phone = process.env[phoneVar], key = process.env[keyVar];
   if (!phone || !key) return { ok: false };
-  const text = String(message).slice(0, 800).trim();
+  const text = shellSafe(String(message).slice(0, 800).trim());
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(key)}`;
   try {
     const r = await fetch(url);
