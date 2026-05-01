@@ -995,7 +995,7 @@ async function init() {
     // Balances + positions for trader and multisig + shared approvals, in parallel
     setStatus('Fetching balances & positions…');
     const tokenUiAmount = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
-    const [tBal, tUsdc, tUsdt, msBal, msUsdc, msUsdt, traderPos, msPos, solPrice] = await Promise.all([
+    const [tBal, tUsdc, tUsdt, msBal, msUsdc, msUsdt, traderPos, msPos, solPrice, rawPerpsTrades] = await Promise.all([
       rpc("getBalance", [W]),
       rpc("getTokenAccountsByOwner", [W,  {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
       rpc("getTokenAccountsByOwner", [W,  {mint:USDT_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
@@ -1006,6 +1006,7 @@ async function init() {
       fetchPositions(MS),
       fetchSolPrice(),
       fetchSharedApprovals(),
+      fetchPerpsTrades(W).catch(() => []),
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
@@ -1016,10 +1017,7 @@ async function init() {
     S.positions = traderPos;
     S.ms.positions = msPos;
     S.solPrice = solPrice;
-    $('pBar').style.width = '20%';
-    
-    // Jupiter Perps trade history since TRACKING_START (single API call, server-filtered)
-    const rawPerpsTrades = await fetchPerpsTrades(W);
+    $('pBar').style.width = '85%';
     $('txCount').textContent = rawPerpsTrades.length + ' trades loaded';
 
     setStatus('Analyzing trades…');
