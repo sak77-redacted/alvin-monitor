@@ -760,6 +760,19 @@ function parsePerpsTrades(rawList) {
   }).sort((a, b) => b.time - a.time);
 }
 
+// ─── Hopium streak — consecutive closes journalled with exit='hopium' ───
+function hopiumStreak() {
+  const closes = S.trades.filter(t => t.action !== 'Open').slice().sort((a, b) => b.time - a.time);
+  let streak = 0;
+  for (const t of closes) {
+    const j = S.journal?.[t.sig];
+    if (j?.exit === 'hopium') streak++;
+    else if (j) break;          // any other journalled exit breaks the streak
+    else break;                 // no journal also breaks (don't infer)
+  }
+  return streak;
+}
+
 // ─── Capture stats — average % of peak unrealised that Alvin actually realised ───
 function captureStats() {
   let pctSum = 0, peakSum = 0, leftSum = 0, count = 0, hopium = 0;
@@ -970,6 +983,17 @@ function tradeCheck() {
     checks.push({ ok:true, name:'Post-loss', reason:'No recent loss in window' });
   }
 
+  // Exit-target discipline — every open position should have a planned exit
+  const open = S.positions || [];
+  if (open.length) {
+    const noTarget = open.filter(p => p.positionPubkey && !S.targets?.[p.positionPubkey]);
+    if (noTarget.length) {
+      checks.push({ ok:'warn', name:'Exit targets', reason:`${noTarget.length} open position${noTarget.length===1?'':'s'} without exit target · declare it before greed kicks in` });
+    } else {
+      checks.push({ ok:true, name:'Exit targets', reason:'All open positions have an exit target set' });
+    }
+  }
+
   return checks;
 }
 
@@ -1019,6 +1043,10 @@ function renderOverview() {
       : 'no drawdown yet';
     return { l:'Max DD', v: dd.maxDD > 0 ? '-$' + dd.maxDD.toFixed(2) : '$0', u: sub, c };
   })() : null;
+  const hopium = hopiumStreak();
+  const hopiumCard = hopium > 0
+    ? { l:'Hopium streak', v: hopium + 'x', u: 'consecutive closes journalled "hopium"', c:'#ef4444' }
+    : null;
 
   const primaryCards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
@@ -1027,6 +1055,7 @@ function renderOverview() {
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
     {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
     ...(ddCard ? [ddCard] : []),
+    ...(hopiumCard ? [hopiumCard] : []),
     {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
   const cap = captureStats();
