@@ -664,6 +664,7 @@ function renderOverview() {
   };
   html += `<div class="pl" style="margin:18px 0 8px;color:#475569">P&amp;L periods</div>`;
   html += `<div class="cards">${periodCard('WTD', pp.wtd, 'this week') + periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  html += renderEquityCurve();
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
   if (haveBalances) {
@@ -945,6 +946,61 @@ function renderPositionCard(p) {
     </div>
     <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
     <div style="font-size:10px;display:flex;gap:12px">${links.join(' · ')}</div>
+  </div>`;
+}
+
+// ─── Equity curve — cumulative realised P&L over time, extended by current unrealised ───
+function renderEquityCurve() {
+  const closes = S.trades.filter(t => t.action !== 'Open').sort((a, b) => a.time - b.time);
+  const unrealised = S.positions.reduce((s, p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
+  if (!closes.length && Math.abs(unrealised) < 0.01) return '';
+
+  let cum = 0;
+  const points = [{ time: TRACKING_START, cum: 0, pnl: 0, action: null, market: null }];
+  for (const c of closes) { cum += c.pnl || 0; points.push({ time: c.time, cum, pnl: c.pnl || 0, action: c.action, market: c.market }); }
+  const realised = cum;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const totalNow = realised + unrealised;
+  const tail = { time: nowSec, cum: totalNow, pnl: unrealised, action: 'Now', market: 'unrealised' };
+
+  const allPts = [...points, tail];
+  const tMin = allPts[0].time, tMax = Math.max(allPts[allPts.length - 1].time, tMin + 1);
+  const ys = allPts.map(p => p.cum).concat(0);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const yPad = (yMax - yMin) * 0.12 || 1;
+  const yLo = yMin - yPad, yHi = yMax + yPad;
+  const W = 800, H = 180, padX = 30, padY = 18;
+  const sx = t => padX + ((t - tMin) / (tMax - tMin)) * (W - padX - 8);
+  const sy = v => H - padY - ((v - yLo) / (yHi - yLo)) * (H - 2 * padY);
+
+  const realisedPath = points.map((p, i) => `${i ? 'L' : 'M'} ${sx(p.time).toFixed(1)},${sy(p.cum).toFixed(1)}`).join(' ');
+  const unrealisedPath = `M ${sx(points[points.length-1].time).toFixed(1)},${sy(points[points.length-1].cum).toFixed(1)} L ${sx(tail.time).toFixed(1)},${sy(tail.cum).toFixed(1)}`;
+  const fillPath = realisedPath + ` L ${sx(tail.time).toFixed(1)},${sy(tail.cum).toFixed(1)} L ${sx(tail.time).toFixed(1)},${sy(0).toFixed(1)} L ${sx(tMin).toFixed(1)},${sy(0).toFixed(1)} Z`;
+  const lineColor = totalNow >= 0 ? '#22c55e' : '#ef4444';
+  const fillColor = totalNow >= 0 ? '#22c55e15' : '#ef444415';
+
+  const fmtAxisDate = ts => new Date(ts*1000).toLocaleDateString('en-AU', { day:'2-digit', month:'short' });
+  const yTicks = [yHi, (yHi+yLo)/2, yLo].map(v => Math.round(v));
+  const dotMarkup = closes.map(c => {
+    const liq = c.action === 'Liquidation';
+    const col = liq ? '#ef4444' : c.pnl >= 0 ? '#22c55e' : '#ef4444';
+    const r = liq ? 4 : 3;
+    return `<circle cx="${sx(c.time).toFixed(1)}" cy="${sy(points.find(p => p.time === c.time)?.cum || 0).toFixed(1)}" r="${r}" fill="${col}" stroke="#0a0e17" stroke-width="1.5"><title>${(c.market||'?')} ${c.action}: ${pnlStr(c.pnl||0)} on ${fmtT(c.time)}</title></circle>`;
+  }).join('');
+
+  return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:10px"><div class="pl" style="margin:0">P&L equity curve · since ${fmtAxisDate(TRACKING_START)}</div><div style="font-size:11px;color:#94a3b8">Realised <span style="color:${realised>=0?'#22c55e':'#ef4444'};font-weight:600">${pnlStr(realised)}</span> · Unrealised <span style="color:${unrealised>=0?'#22c55e':'#ef4444'};font-weight:600">${pnlStr(unrealised)}</span> · Total <span style="color:${totalNow>=0?'#22c55e':'#ef4444'};font-weight:700">${pnlStr(totalNow)}</span></div></div>
+  <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:200px;display:block;font-family:inherit;font-size:9px">
+    <line x1="${padX}" x2="${W-8}" y1="${sy(0).toFixed(1)}" y2="${sy(0).toFixed(1)}" stroke="#475569" stroke-dasharray="2 4" stroke-width="0.5"/>
+    ${yTicks.map(v => `<text x="${padX-4}" y="${sy(v).toFixed(1)+3}" fill="#64748b" text-anchor="end">${v>=0?'$':'-$'}${Math.abs(v)}</text>`).join('')}
+    <text x="${padX}" y="${H-4}" fill="#64748b">${fmtAxisDate(tMin)}</text>
+    <text x="${W-8}" y="${H-4}" fill="#64748b" text-anchor="end">now</text>
+    <path d="${fillPath}" fill="${fillColor}"/>
+    <path d="${realisedPath}" fill="none" stroke="${realised>=0?'#22c55e':'#ef4444'}" stroke-width="1.5"/>
+    <path d="${unrealisedPath}" fill="none" stroke="${unrealised>=0?'#22c55e':'#ef4444'}" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.85"/>
+    ${dotMarkup}
+    <circle cx="${sx(tail.time).toFixed(1)}" cy="${sy(tail.cum).toFixed(1)}" r="3" fill="${lineColor}" stroke="#0a0e17" stroke-width="1.5"/>
+  </svg>
+  <div style="font-size:9px;color:#475569;margin-top:6px">Solid line = realised P&L; dashed segment = current unrealised mark-to-market on open positions. Dots are individual closes (red ring on liquidations).</div>
   </div>`;
 }
 
