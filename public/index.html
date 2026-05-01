@@ -167,7 +167,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], allTxns:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[] };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[] };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -349,87 +349,90 @@ async function rpc(method, params) {
   }
 }
 
-// ─── Helius Enhanced Transactions ───
-async function fetchAllTrades() {
-  let all = [], lastSig = null, page = 0;
+// ─── Jupiter Perps trade history ───
+// Returns post-tracking-start trade events (opens + closes + liquidations) directly
+// from Jupiter's perps API, which gives us structured P&L per close, including
+// liquidations that the Helius enhanced parser was silently dropping.
+async function fetchPerpsTrades(addr) {
   setStatus('Fetching trades…');
-  while (page < 10) { // max 1000 txns
-    let url = `${HELIUS_PROXY}?address=${W}&limit=100`;
-    if (lastSig) url += '&before=' + lastSig;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('Helius API: ' + r.status);
-    const batch = await r.json();
-    if (!batch.length) break;
-    all.push(...batch);
-    lastSig = batch[batch.length-1].signature;
-    page++;
-    setStatus(`Fetched ${all.length} transactions…`);
-    $('pBar').style.width = Math.min(90, 20 + page*8) + '%';
-    await sleep(300);
-  }
-  return all;
+  const after = Math.floor(TRACKING_START);
+  const url = `https://perps-api.jup.ag/v1/trades?walletAddress=${addr}&createdAtAfter=${after}&start=0&end=2000`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Jupiter perps API: ' + r.status);
+  const d = await r.json();
+  if ($('pBar')) $('pBar').style.width = '85%';
+  return d?.dataList || [];
 }
 
-// ─── Parse Jupiter Trades ───
-function parseTrades(txns) {
-  const trades = [];
-  for (const tx of txns) {
-    if (!tx.timestamp) continue;
-    const isJup = tx.source === 'JUPITER' || (tx.description||'').toLowerCase().includes('jupiter') || (tx.type === 'SWAP' && tx.events?.swap);
-    const isPerp = (tx.description||'').toLowerCase().includes('perp');
-    
-    if (isJup || isPerp || tx.type === 'SWAP') {
-      const swap = tx.events?.swap;
-      const desc = tx.description || '';
-      
-      let tokenIn = null, tokenOut = null, amtIn = 0, amtOut = 0;
-      
-      if (swap) {
-        const ni = swap.nativeInput;
-        const no_ = swap.nativeOutput;
-        const ti = swap.tokenInputs || [];
-        const to = swap.tokenOutputs || [];
-        
-        if (ni && ni.amount > 0) { tokenIn = 'SOL'; amtIn = ni.amount / 1e9; }
-        if (no_ && no_.amount > 0) { tokenOut = 'SOL'; amtOut = no_.amount / 1e9; }
-        if (ti.length) { tokenIn = ti[0].symbol || ti[0].mint?.slice(0,6) || 'TOKEN'; amtIn = ti[0].rawTokenAmount ? ti[0].rawTokenAmount.tokenAmount / Math.pow(10, ti[0].rawTokenAmount.decimals||6) : 0; }
-        if (to.length) { tokenOut = to[0].symbol || to[0].mint?.slice(0,6) || 'TOKEN'; amtOut = to[0].rawTokenAmount ? to[0].rawTokenAmount.tokenAmount / Math.pow(10, to[0].rawTokenAmount.decimals||6) : 0; }
-      }
-      
-      // Also check tokenTransfers
-      if (!tokenIn && tx.tokenTransfers?.length) {
-        for (const t of tx.tokenTransfers) {
-          if (t.fromUserAccount === W) { tokenIn = t.symbol || t.mint?.slice(0,6) || 'TOKEN'; amtIn = t.tokenAmount || 0; }
-          if (t.toUserAccount === W) { tokenOut = t.symbol || t.mint?.slice(0,6) || 'TOKEN'; amtOut = t.tokenAmount || 0; }
-        }
-      }
-      
-      // Calculate USDC P&L
-      let usdcIn = 0, usdcOut = 0;
-      if (tokenIn === 'USDC' || tokenIn === 'USDT') usdcIn = amtIn;
-      if (tokenOut === 'USDC' || tokenOut === 'USDT') usdcOut = amtOut;
-      
-      const date = new Date(tx.timestamp * 1000);
-      const hour = date.getHours(); // local time
-      
-      trades.push({
-        sig: tx.signature,
-        time: tx.timestamp,
-        date,
-        type: isPerp ? 'Perp' : 'Swap',
-        desc: desc.substring(0, 120),
-        tokenIn, tokenOut, amtIn, amtOut,
-        usdcIn, usdcOut,
-        pnl: usdcOut - usdcIn,
-        fee: tx.fee ? tx.fee / 1e9 : 0,
-        source: tx.source || 'Unknown',
-        hour,
-        dayOfWeek: date.getDay(),
-        weekKey: getWeekKey(date),
-      });
-    }
-  }
-  return trades.sort((a,b) => b.time - a.time);
+function parsePerpsTrades(rawList) {
+  return rawList.map(r => {
+    const date = new Date(r.createdTime * 1000);
+    const sizeUsd = parseFloat(r.size) || 0;
+    const collDelta = parseFloat(r.collateralUsdDelta) || 0;
+    const pnl = r.pnl != null ? parseFloat(r.pnl) : 0;
+    const fee = parseFloat(r.fee) || 0;
+    const isOpen = r.action === 'Increase';
+    const isLiq = r.orderType === 'Liquidation';
+    const action = isLiq ? 'Liquidation' : (isOpen ? 'Open' : 'Close');
+    const market = r.positionName || '?';
+    const asset = market.replace(/-PERP$/, '');
+    return {
+      sig: r.txHash,
+      time: r.createdTime,
+      date,
+      type: action,
+      action,
+      side: r.side,
+      market,
+      asset,
+      sizeUsd,
+      price: parseFloat(r.price) || 0,
+      collateralDelta: collDelta,
+      pnl,
+      fee,
+      orderType: r.orderType,
+      positionPubkey: r.positionPubkey,
+      source: 'JUPITER_PERPS',
+      hour: date.getHours(),
+      dayOfWeek: date.getDay(),
+      weekKey: getWeekKey(date),
+      // Legacy fields for compliance + existing renderers
+      tokenIn: isOpen ? 'USDC' : asset,
+      tokenOut: isOpen ? asset : 'USDC',
+      amtIn: Math.abs(collDelta),
+      amtOut: Math.abs(collDelta),
+      usdcIn: isOpen ? Math.abs(collDelta) : 0,
+      usdcOut: isOpen ? 0 : collDelta,
+    };
+  }).sort((a, b) => b.time - a.time);
+}
+
+// ─── P&L rollups (WTD / MTD / YTD / LTD), bounded by TRACKING_START ───
+function periodPnl() {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  const dow = startOfWeek.getDay() || 7; // Sunday=0 → 7 so Monday=1 starts the week
+  startOfWeek.setDate(startOfWeek.getDate() - (dow - 1));
+  startOfWeek.setHours(0,0,0,0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const trackingMs = TRACKING_START * 1000;
+  const calc = (since) => {
+    const floorMs = Math.max(since.getTime(), trackingMs);
+    const filtered = S.trades.filter(t => t.time * 1000 >= floorMs);
+    const closes = filtered.filter(t => t.action !== 'Open');
+    return {
+      pnl: closes.reduce((s, t) => s + (t.pnl || 0), 0),
+      closes: closes.length,
+      liqs: filtered.filter(t => t.action === 'Liquidation').length,
+    };
+  };
+  return {
+    wtd: calc(startOfWeek),
+    mtd: calc(startOfMonth),
+    ytd: calc(startOfYear),
+    ltd: calc(new Date(trackingMs)),
+  };
 }
 
 function getWeekKey(d) {
@@ -645,6 +648,16 @@ function renderOverview() {
   let html = `<div class="panel" style="background:linear-gradient(135deg,${verdict.bg},#1a1f35);border-left:4px solid ${verdict.color};padding:18px 20px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:18px"><div style="flex:1;min-width:220px"><div style="font-size:clamp(16px,3.6vw,20px);font-weight:700;color:${verdict.color};letter-spacing:.5px">${verdict.icon} ${verdict.text}</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.45">${verdict.headline}</div></div><div style="text-align:right"><div class="cl">Wallet Value</div><div style="font-size:clamp(22px,5.5vw,30px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:10px;color:#64748b;margin-top:2px;line-height:1.4">${breakdown}</div></div></div></div>`;
   html += renderPositionsPanel(S.positions);
   html += `<div class="cards">${primaryCards.map(cardRender).join('')}</div>`;
+
+  // P&L periods — WTD / MTD / YTD / LTD, all bounded by TRACKING_START
+  const pp = periodPnl();
+  const periodCard = (label, d, sub) => {
+    const col = d.pnl > 0 ? '#22c55e' : d.pnl < 0 ? '#ef4444' : '#64748b';
+    const liqBit = d.liqs ? ` · ${d.liqs} liq` : '';
+    return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
+  };
+  html += `<div class="pl" style="margin:18px 0 8px;color:#475569">P&amp;L periods</div>`;
+  html += `<div class="cards">${periodCard('WTD', pp.wtd, 'this week') + periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
   if (haveBalances) {
@@ -672,11 +685,17 @@ function renderOverview() {
   // Recent trades
   html += `<div class="panel"><div class="pl">Last 5 Trades</div>`;
   if (S.trades.length) {
-    html += S.trades.slice(0,5).map(t => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px">
-      <div><span style="color:#e2e8f0">${t.tokenIn||'?'} → ${t.tokenOut||'?'}</span> <span style="color:#475569;font-size:9px">${fmtT(t.time)} · ${ago(t.time)}</span></div>
-      <div style="text-align:right"><span class="${pnlClass(t.pnl)}" style="font-weight:600">${pnlStr(t.pnl)}</span> <a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px;margin-left:6px">${short(t.sig)} ↗</a></div>
-    </div>`).join('');
-  } else { html += '<div style="color:#475569;font-size:12px;text-align:center;padding:16px">No Jupiter trades found</div>'; }
+    html += S.trades.slice(0,5).map(t => {
+      const sideColor = t.side === 'long' ? '#22c55e' : '#ef4444';
+      const actLabel = t.action === 'Liquidation' ? '🔴 LIQ' : t.action.toUpperCase();
+      const actColor = t.action === 'Liquidation' ? '#ef4444' : t.action === 'Open' ? '#94a3b8' : (t.pnl >= 0 ? '#22c55e' : '#ef4444');
+      const pnlBit = t.action === 'Open' ? `$${t.sizeUsd.toFixed(0)} size` : pnlStr(t.pnl);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px">
+        <div><span style="color:${sideColor};font-weight:600">${(t.side||'?').toUpperCase()}</span> <span style="color:#e2e8f0">${t.market}</span> <span style="color:${actColor};font-size:10px;margin-left:4px">${actLabel}</span> <span style="color:#475569;font-size:9px">· ${fmtT(t.time)} · ${ago(t.time)}</span></div>
+        <div style="text-align:right"><span style="color:${actColor};font-weight:600">${pnlBit}</span> <a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px;margin-left:6px">${short(t.sig)} ↗</a></div>
+      </div>`;
+    }).join('');
+  } else { html += '<div style="color:#475569;font-size:12px;text-align:center;padding:16px">No trades since tracking started</div>'; }
   html += '</div>';
   
   // Trading hour heatmap
@@ -697,12 +716,13 @@ function renderOverview() {
 }
 
 function downloadTradesCsv() {
-  const headers = ['Time UTC','Type','From','To','Amt In','Amt Out','P&L USD','Source','Signature'];
+  const headers = ['Time UTC','Action','OrderType','Side','Market','Size USD','Price','Collateral Δ','P&L USD','Fee USD','PositionPubkey','Signature'];
   const rows = S.trades.map(t => [
     new Date(t.time*1000).toISOString(),
-    t.type, t.tokenIn || '', t.tokenOut || '',
-    t.amtIn || 0, t.amtOut || 0, (t.pnl||0).toFixed(2),
-    t.source || '', t.sig,
+    t.action, t.orderType || '', t.side || '', t.market || '',
+    t.sizeUsd.toFixed(2), t.price.toFixed(2), t.collateralDelta.toFixed(2),
+    (t.pnl||0).toFixed(2), t.fee.toFixed(2),
+    t.positionPubkey || '', t.sig,
   ]);
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -717,9 +737,9 @@ function renderTrades() {
   if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
   let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
-    <th>Time</th><th>Type</th><th>From</th><th>To</th><th>Amt In</th><th>Amt Out</th><th>P&L</th><th>Flags</th><th>Sig</th>
+    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Fee</th><th>Flags</th><th>Sig</th>
   </tr></thead><tbody>`;
-  
+
   for (const t of S.trades) {
     const flags = [];
     const viol = S.violations.filter(v => v.sig === t.sig);
@@ -729,15 +749,19 @@ function renderTrades() {
       if (v.type==='ASSET') flags.push('<span style="color:#f59e0b;font-size:9px">⚠ ASSET</span>');
       if (v.type==='SIZE') flags.push('<span style="color:#f59e0b;font-size:9px">📏 SIZE</span>');
     });
-    
-    html += `<tr class="${viol.some(v=>v.severity==='alert')?'ext-row':''}">
+    const sideColor = t.side === 'long' ? '#22c55e' : '#ef4444';
+    const actColor = t.action === 'Liquidation' ? '#ef4444' : t.action === 'Open' ? '#8b5cf6' : '#06b6d4';
+    const isLiq = t.action === 'Liquidation';
+    html += `<tr class="${isLiq||viol.some(v=>v.severity==='alert')?'ext-row':''}">
       <td data-label="Time" style="color:#94a3b8;white-space:nowrap">${fmtT(t.time)}</td>
-      <td data-label="Type"><span class="tag" style="background:#8b5cf620;color:#8b5cf6">${t.type}</span></td>
-      <td data-label="From" style="color:#ef4444">${t.tokenIn||'—'}</td>
-      <td data-label="To" style="color:#22c55e">${t.tokenOut||'—'}</td>
-      <td data-label="Amt In" style="font-variant-numeric:tabular-nums">${t.amtIn?t.amtIn.toFixed(t.amtIn<1?6:2):''}</td>
-      <td data-label="Amt Out" style="font-variant-numeric:tabular-nums">${t.amtOut?t.amtOut.toFixed(t.amtOut<1?6:2):''}</td>
-      <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.pnl!==0?pnlStr(t.pnl):'—'}</td>
+      <td data-label="Action"><span class="tag" style="background:${actColor}20;color:${actColor}">${t.action}${isLiq?' 🔴':''}</span></td>
+      <td data-label="Side" style="color:${sideColor};font-weight:600">${(t.side||'?').toUpperCase()}</td>
+      <td data-label="Market" style="color:#e2e8f0">${t.market}</td>
+      <td data-label="Size USD" style="font-variant-numeric:tabular-nums">$${t.sizeUsd.toFixed(2)}</td>
+      <td data-label="Price" style="font-variant-numeric:tabular-nums">$${t.price.toFixed(2)}</td>
+      <td data-label="Coll Δ" style="font-variant-numeric:tabular-nums;color:${t.collateralDelta>=0?'#22c55e':'#ef4444'}">${t.collateralDelta>=0?'+':''}${t.collateralDelta.toFixed(2)}</td>
+      <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.action!=='Open'?pnlStr(t.pnl):'—'}</td>
+      <td data-label="Fee" style="color:#475569;font-variant-numeric:tabular-nums">$${t.fee.toFixed(2)}</td>
       <td data-label="Flags">${flags.join(' ')||'—'}</td>
       <td data-label="Sig"><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
     </tr>`;
@@ -994,14 +1018,13 @@ async function init() {
     S.solPrice = solPrice;
     $('pBar').style.width = '20%';
     
-    // Fetch all transactions via Helius enhanced API
-    S.allTxns = await fetchAllTrades();
-    $('txCount').textContent = S.allTxns.length + ' txns loaded';
-    
-    // Parse Jupiter trades (filtered to tracking window)
+    // Jupiter Perps trade history since TRACKING_START (single API call, server-filtered)
+    const rawPerpsTrades = await fetchPerpsTrades(W);
+    $('txCount').textContent = rawPerpsTrades.length + ' trades loaded';
+
     setStatus('Analyzing trades…');
     $('pBar').style.width = '92%';
-    S.trades = parseTrades(S.allTxns).filter(t => t.time >= TRACKING_START);
+    S.trades = parsePerpsTrades(rawPerpsTrades);
 
     // Compliance check
     setStatus('Checking compliance…');
