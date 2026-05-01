@@ -113,7 +113,7 @@
   <div class="prog hidden" id="pWrap"><div class="pbar" id="pBar"></div></div>
 </div>
 
-<div id="identityModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px"><div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:28px;max-width:420px;width:100%;text-align:center"><div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px">Identity</div><div style="font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:10px">Who are you?</div><div style="font-size:12px;color:#94a3b8;margin-bottom:22px;line-height:1.5">Every approval is stamped with your identity in the audit log. Pick yours so the record knows who clicked what.</div><div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button onclick="pickIdentity('alvin')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Alvin</button><button onclick="pickIdentity('ken')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Ken</button></div><div style="font-size:10px;color:#475569;margin-top:18px">You can change this later in the header.</div></div></div>
+<div id="identityModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px"><div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:28px;max-width:420px;width:100%;text-align:center"><div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px">Identity</div><div style="font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:10px">Who are you?</div><div style="font-size:12px;color:#94a3b8;margin-bottom:22px;line-height:1.5">Every approval is stamped with your identity in the audit log. Pick yours so the record knows who clicked what.</div><div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button onclick="pickIdentity('alvin')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Alvin</button><button onclick="pickIdentity('ken')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Ken</button></div><div style="font-size:10px;color:#475569;margin-top:18px">You can change this later in the header.</div></div></div>
 
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
@@ -215,7 +215,7 @@ function saveIdentity(v) { try { localStorage.setItem('alvin_identity', v); } ca
 function pickIdentity(v) {
   saveIdentity(v);
   const sel = $('who'); if (sel) sel.value = v;
-  $('identityModal')?.classList.add('hidden');
+  const modal = $('identityModal'); if (modal) modal.style.display = 'none';
 }
 
 // ─── Wallet diff alerts (per-user, "since you last looked") ───
@@ -1147,7 +1147,7 @@ setInterval(tickFreshness, 1000);
 setInterval(() => { if (!$('rBtn').disabled && document.visibilityState === 'visible') init(); }, REFRESH_MS);
 
 $('who').value = loadIdentity();
-if (!loadIdentity()) $('identityModal')?.classList.remove('hidden');
+if (!loadIdentity()) { const m = $('identityModal'); if (m) m.style.display = 'flex'; }
 renderRules();
 init();
 </script>
