@@ -1352,6 +1352,36 @@ function renderTrades() {
   $('tab-trades').innerHTML = html;
 }
 
+function journalPatterns() {
+  const exitCounts = {};
+  const rulesCounts = { yes: 0, partial: 0, no: 0 };
+  let total = 0;
+  for (const sig in S.journal) {
+    const j = S.journal[sig];
+    total++;
+    if (j.exit) exitCounts[j.exit] = (exitCounts[j.exit] || 0) + 1;
+    if (j.rules && rulesCounts[j.rules] != null) rulesCounts[j.rules]++;
+  }
+  return { exitCounts, rulesCounts, total };
+}
+
+function renderJournalPatternsPanel() {
+  const p = journalPatterns();
+  if (p.total === 0) return '';
+  const exitLabels = { hit_tp:'hit take-profit', hit_sl:'hit stop-loss', liquidation:'liquidation', thesis_changed:'thesis changed', froze:'froze · didn\'t act', hopium:'held for more · hopium', manual_close:'manual · no plan', other:'other' };
+  const exitColors = { hit_tp:'#22c55e', hit_sl:'#3b82f6', liquidation:'#ef4444', thesis_changed:'#94a3b8', froze:'#f59e0b', hopium:'#ef4444', manual_close:'#94a3b8', other:'#64748b' };
+  const exits = Object.entries(p.exitCounts).sort((a,b) => b[1]-a[1]);
+  const exitTotal = exits.reduce((s, [,n]) => s+n, 0) || 1;
+  const exitBars = exits.map(([k, n]) => {
+    const pct = (n / exitTotal) * 100;
+    const c = exitColors[k] || '#64748b';
+    return `<div style="display:flex;align-items:center;gap:10px;font-size:11px;padding:4px 0"><div style="min-width:130px;color:#94a3b8">${exitLabels[k]||k}</div><div style="flex:1;background:#1e293b;border-radius:3px;overflow:hidden;height:14px"><div style="width:${pct.toFixed(1)}%;height:100%;background:${c}"></div></div><div style="min-width:50px;text-align:right;color:#e2e8f0;font-variant-numeric:tabular-nums">${n} <span style="color:#475569">· ${pct.toFixed(0)}%</span></div></div>`;
+  }).join('');
+  const rTot = p.rulesCounts.yes + p.rulesCounts.partial + p.rulesCounts.no;
+  const rPct = (n) => rTot ? ((n / rTot) * 100).toFixed(0) : 0;
+  return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><div class="pl" style="margin:0">Journal patterns · ${p.total} entries</div>${rTot ? `<div style="font-size:11px;color:#94a3b8">Rules followed: <span style="color:#22c55e;font-weight:600">${rPct(p.rulesCounts.yes)}% yes</span> · <span style="color:#f59e0b;font-weight:600">${rPct(p.rulesCounts.partial)}% partial</span> · <span style="color:#ef4444;font-weight:600">${rPct(p.rulesCounts.no)}% no</span></div>` : ''}</div>${exits.length ? exitBars : '<div style="color:#475569;font-size:11px;text-align:center;padding:8px 0">no exit reasons logged yet</div>'}</div>`;
+}
+
 function renderCompliance() {
   const counts = { REVENGE:0, CURFEW:0, ASSET:0, SIZE:0, BUDGET:0, WALLET:0 };
   S.violations.forEach(v => { if (!v.approved) counts[v.type] = (counts[v.type]||0) + 1; });
@@ -1377,7 +1407,11 @@ function renderCompliance() {
     </div>`;
   }
   html += '</div>';
-  
+
+  // Journal patterns — aggregate the per-trade journals so trends across
+  // closes (hopium, froze, etc.) become visible without scrolling the Trades tab.
+  html += renderJournalPatternsPanel();
+
   // Violation log
   if (S.violations.length) {
     const openCount = S.violations.filter(v => !v.approved).length;
