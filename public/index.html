@@ -759,6 +759,24 @@ function parsePerpsTrades(rawList) {
   }).sort((a, b) => b.time - a.time);
 }
 
+// ─── Capture stats — average % of peak unrealised that Alvin actually realised ───
+function captureStats() {
+  let pctSum = 0, peakSum = 0, leftSum = 0, count = 0, hopium = 0;
+  for (const t of S.trades) {
+    if (t.action === 'Open') continue;
+    const j = S.journal?.[t.sig];
+    if (j?.exit === 'hopium') hopium++;
+    const peak = peakUnrealisedFor(t);
+    if (!peak || peak.peak <= 0.5) continue;
+    pctSum += (t.pnl / peak.peak) * 100;
+    peakSum += peak.peak;
+    leftSum += Math.max(0, peak.peak - (t.pnl || 0));
+    count++;
+  }
+  if (!count) return { avgCaptured: null, totalLeft: 0, count: 0, peakSum: 0, hopium };
+  return { avgCaptured: pctSum / count, totalLeft: leftSum, count, peakSum, hopium };
+}
+
 // ─── Drawdown — peak-to-trough across the total-equity series ───
 // Falls back to the realised stepped series if not enough samples.
 function drawdownStats() {
@@ -1010,10 +1028,19 @@ function renderOverview() {
     ...(ddCard ? [ddCard] : []),
     {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
+  const cap = captureStats();
+  const captureCard = cap.avgCaptured != null ? (() => {
+    const v = cap.avgCaptured;
+    const c = v >= 90 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
+    const sub = `${cap.count} closes · -$${cap.totalLeft.toFixed(0)} left on table${cap.hopium ? ` · ${cap.hopium} hopium` : ''}`;
+    return { l: 'Avg Captured', v: v.toFixed(0) + '%', u: sub, c };
+  })() : null;
+
   const secondaryCards = [
     {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
     {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
     {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
+    ...(captureCard ? [captureCard] : []),
     {l:'Avg Size',v:'$'+avgTrade.toFixed(2),u:'per trade',c:'#f59e0b'},
     {l:'Volume',v:'$'+totalVol.toFixed(2),u:'total traded',c:'#06b6d4'},
   ];
@@ -1296,6 +1323,62 @@ function renderCompliance() {
   $('tab-compliance').innerHTML = html;
 }
 
+function dailyPnl() {
+  const map = {};
+  for (const t of S.trades) {
+    if (t.action === 'Open') continue;
+    const k = new Date(t.time * 1000).toISOString().slice(0, 10);
+    if (!map[k]) map[k] = { day: k, pnl: 0, count: 0, liqs: 0 };
+    map[k].pnl += t.pnl || 0;
+    map[k].count++;
+    if (t.action === 'Liquidation') map[k].liqs++;
+  }
+  return Object.values(map).sort((a, b) => a.day.localeCompare(b.day));
+}
+
+function renderDailyPnL() {
+  const data = dailyPnl();
+  if (data.length < 1) return '';
+  const maxAbs = Math.max(...data.map(d => Math.abs(d.pnl)), 1);
+  const W = 1000, H = 220, padL = 50, padR = 16, padT = 18, padB = 36;
+  const N = data.length;
+  const slot = (W - padL - padR) / Math.max(N, 1);
+  const barW = Math.max(6, slot * 0.7);
+  const sx = i => padL + slot * (i + 0.5);
+  const zeroY = padT + (H - padT - padB) / 2;
+  const sy = v => zeroY - (v / maxAbs) * (H - padT - padB) / 2;
+  const bars = data.map((d, i) => {
+    const cx = sx(i);
+    const y = Math.min(zeroY, sy(d.pnl));
+    const h = Math.max(1, Math.abs(sy(d.pnl) - zeroY));
+    const c = d.pnl >= 0 ? '#22c55e' : '#ef4444';
+    const liqRing = d.liqs ? `<rect x="${(cx - barW/2 - 1.5).toFixed(1)}" y="${(y - 1.5).toFixed(1)}" width="${(barW + 3).toFixed(1)}" height="${(h + 3).toFixed(1)}" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2" rx="3"/>` : '';
+    return `${liqRing}<rect x="${(cx - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}" rx="2"><title>${d.day}: ${pnlStr(d.pnl)} · ${d.count} closes${d.liqs ? ` · ${d.liqs} liq` : ''}</title></rect>`;
+  }).join('');
+  const labelEvery = Math.max(1, Math.ceil(N / 10));
+  const xLabels = data.map((d, i) => {
+    if (i % labelEvery !== 0 && i !== N - 1) return '';
+    const lab = new Date(d.day).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    return `<text x="${sx(i).toFixed(1)}" y="${(H - 14).toFixed(1)}" fill="#64748b" text-anchor="middle" font-size="11">${lab}</text>`;
+  }).join('');
+  const yMaxLabel = `<text x="${(padL - 8).toFixed(1)}" y="${(padT + 4).toFixed(1)}" fill="#64748b" text-anchor="end" font-size="10">+$${maxAbs.toFixed(0)}</text>`;
+  const yMinLabel = `<text x="${(padL - 8).toFixed(1)}" y="${(H - padB + 8).toFixed(1)}" fill="#64748b" text-anchor="end" font-size="10">-$${maxAbs.toFixed(0)}</text>`;
+  const totalDays = data.length, greenDays = data.filter(d => d.pnl > 0).length, redDays = data.filter(d => d.pnl < 0).length;
+  return `<div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div class="pl" style="margin:0">Daily P&L · ${totalDays} day${totalDays===1?'':'s'}</div>
+      <div style="font-size:11px;color:#94a3b8"><span style="color:#22c55e">${greenDays} green</span> · <span style="color:#ef4444">${redDays} red</span> · ${totalDays - greenDays - redDays} flat</div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;font-family:inherit">
+      <line x1="${padL}" x2="${W-padR}" y1="${zeroY.toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="#475569" stroke-width="0.8"/>
+      ${yMaxLabel}${yMinLabel}
+      ${bars}
+      ${xLabels}
+    </svg>
+    <div style="font-size:10px;color:#475569;margin-top:8px">Each bar = one day's realised P&L. Days with liquidations are ringed in dashed red.</div>
+  </div>`;
+}
+
 function downloadWeeklyCsv() {
   const headers = ['Week','Closes','Liquidations','Capital Deployed USD','P&L USD','Wins','Losses','Win Rate %','Over Loss Budget'];
   const rows = S.weeklyData.map(w => [
@@ -1315,7 +1398,8 @@ function downloadWeeklyCsv() {
 function renderWeekly() {
   if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
-  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
+  let html = renderDailyPnL();
+  html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
     <th>Week</th><th>Closes</th><th>Capital</th><th>P&L</th><th>Win Rate</th><th>Loss vs Budget</th>
   </tr></thead><tbody>`;
@@ -1478,6 +1562,21 @@ function renderEquityCurve() {
   }).join('');
   const nowDot = `<circle cx="${sx(tail.t).toFixed(1)}" cy="${sy(tail.v).toFixed(1)}" r="4" fill="${totalNow>=0?'#22c55e':'#ef4444'}" stroke="#0a0e17" stroke-width="2"><title>Total · ${pnlStr(totalNow)} · now</title></circle>`;
 
+  // Drawdown peak/trough annotations (only when we have a meaningful drawdown)
+  const dd = drawdownStats();
+  let ddMarkers = '';
+  if (dd && dd.maxDD > 0.5 && dd.peakAt && dd.maxDDAt) {
+    const px = sx(dd.peakAt), py = sy(dd.peak);
+    const tx = sx(dd.maxDDAt), ty = sy(dd.peak - dd.maxDD);
+    ddMarkers = `
+      <line x1="${px.toFixed(1)}" y1="${py.toFixed(1)}" x2="${tx.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+      <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4" fill="#0a0e17" stroke="#22c55e" stroke-width="2"><title>Peak ${pnlStr(dd.peak)} · ${fmtT(dd.peakAt)}</title></circle>
+      <text x="${(px+8).toFixed(1)}" y="${(py-6).toFixed(1)}" fill="#22c55e" font-size="10" font-weight="600">peak ${pnlStr(dd.peak)}</text>
+      <circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="4" fill="#0a0e17" stroke="#f59e0b" stroke-width="2"><title>Trough ${pnlStr(dd.peak - dd.maxDD)} · max DD -${'$'}${dd.maxDD.toFixed(2)} · ${fmtT(dd.maxDDAt)}</title></circle>
+      <text x="${(tx+8).toFixed(1)}" y="${(ty+12).toFixed(1)}" fill="#f59e0b" font-size="10" font-weight="600">trough · -$${dd.maxDD.toFixed(0)} DD</text>
+    `;
+  }
+
   const yLabels = yTicks.map(v => `<text x="${padL - 8}" y="${(sy(v) + 3).toFixed(1)}" fill="#64748b" text-anchor="end" font-size="11">${v >= 0 ? '$' : '-$'}${Math.abs(Math.round(v))}</text>`).join('');
   const xLabels = xTicks.map((t, i) => {
     const anchor = i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle';
@@ -1513,6 +1612,7 @@ function renderEquityCurve() {
       <path d="${realisedPath}" fill="none" stroke="${realisedLineCol}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="${samplePath ? '0.55' : '1'}"/>
       ${unrealisedPath ? `<path d="${unrealisedPath}" fill="none" stroke="${unrealisedLineCol}" stroke-width="2" stroke-dasharray="6 5" opacity="0.75"/>` : ''}
       ${samplePath ? `<path d="${samplePath}" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>` : ''}
+      ${ddMarkers}
       ${closeDots}
       ${nowDot}
       ${yLabels}
