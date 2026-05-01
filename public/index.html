@@ -173,9 +173,6 @@
 
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
-<div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
-<div id="staleBanner" class="abanner hidden" style="background:#f59e0b15;border:1px solid #f59e0b"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px">⏱ DATA STALE</div><div id="staleDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="init()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">retry now</button></div></div>
-<div id="newPosBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📍 NEW POSITION · SET YOUR EXIT</div><div id="newPosDetail" style="font-size:12px;color:#94a3b8"></div></div><button id="newPosBtn" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">set target</button></div></div>
 <div id="liqBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #ef4444;animation:tpPulse 1s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⚠ LIQUIDATION CLOSE — &lt;5% AWAY</div><div id="liqDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="acknowledgeLiq()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'm watching</button></div></div>
 <div id="takeProfitBanner" class="abanner hidden" style="border:2px solid #f59e0b;animation:tpPulse 1.4s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div id="takeProfitHeadline" style="font-size:16px;font-weight:700;margin-bottom:6px"></div><div id="takeProfitDetail" style="font-size:13px"></div></div><button onclick="acknowledgeTakeProfit()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'll take it</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
@@ -187,7 +184,6 @@
   <button class="tab" onclick="stab('compliance',this)">Compliance</button>
   <button class="tab" onclick="stab('weekly',this)">Weekly</button>
   <button class="tab" onclick="stab('multisig',this)">Multisig</button>
-  <button class="tab" onclick="stab('scorecard',this)">Scorecard</button>
   <button class="tab" onclick="stab('rules',this)">Rules</button>
 </div>
 
@@ -197,7 +193,6 @@
   <div id="tab-compliance" class="hidden"></div>
   <div id="tab-weekly" class="hidden"></div>
   <div id="tab-multisig" class="hidden"></div>
-  <div id="tab-scorecard" class="hidden"></div>
   <div id="tab-rules" class="hidden"></div>
 </div>
 
@@ -257,7 +252,9 @@ async function fetchPositions(addr) {
 const REFRESH_MS = 60_000; // auto-refresh interval
 
 // ─── Banner coordinator — show only the highest-priority active banner at a time ───
-const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'newPosBanner', 'staleBanner', 'walletDeltaBanner'];
+// Action-only banners. FYI surfaces (stale, wallet-delta, new-position) live
+// inline next to the relevant content instead of competing for top-of-page.
+const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner'];
 let _bannerCycleIdx = 0;
 function setBanner(id, on) {
   const el = $(id); if (!el) return;
@@ -293,24 +290,6 @@ function applyMute() {
   btn.style.color = on ? '#ef4444' : '#94a3b8';
   btn.style.borderColor = on ? '#ef444450' : '#475569';
   btn.title = on ? 'Sounds muted (click to unmute)' : 'Sounds on (click to mute)';
-}
-
-// ─── New-position thesis prompt — when we detect a new positionPubkey, surface a one-time banner asking Alvin to set the exit target ───
-let _lastSeenPubkeys = null;
-function detectNewPositions() {
-  const banner = $('newPosBanner'); if (!banner) return;
-  const cur = new Set((S.positions || []).map(p => p.positionPubkey).filter(Boolean));
-  if (_lastSeenPubkeys === null) { _lastSeenPubkeys = cur; setBanner('newPosBanner', false); return; }
-  const fresh = [...cur].filter(pk => !_lastSeenPubkeys.has(pk) && !S.targets?.[pk]);
-  _lastSeenPubkeys = cur;
-  if (!fresh.length) { setBanner('newPosBanner', false); return; }
-  const pk = fresh[0];
-  const p = S.positions.find(x => x.positionPubkey === pk);
-  if (!p) { setBanner('newPosBanner', false); return; }
-  const mkt = p.market || tokenSymbol(p.marketMint);
-  $('newPosDetail').textContent = `${(p.side||'').toUpperCase()} ${mkt} just opened — declare your exit price now, before greed/hopium kicks in.`;
-  $('newPosBtn').onclick = () => openTargetModal(pk);
-  setBanner('newPosBanner', true);
 }
 
 // ─── Focus mode — minimal trading cockpit, kills the noise mid-trade ───
@@ -404,29 +383,23 @@ const WALLET_DELTA_THRESHOLD_PCT = 25;
 function loadLastSeenWallet() { try { return JSON.parse(localStorage.getItem('alvin_last_seen_wallet') || 'null'); } catch { return null; } }
 function saveLastSeenWallet(snap) { try { localStorage.setItem('alvin_last_seen_wallet', JSON.stringify(snap)); } catch {} }
 function checkWalletDelta() {
-  if (!$('walletDeltaBanner')) return;
-  if (S.solPrice == null || S.sol == null) { setBanner('walletDeltaBanner', false); return; }
+  if (S.solPrice == null || S.sol == null) { S.walletDelta = null; return; }
   const walletUsd = S.sol * S.solPrice + (S.usdc || 0) + (S.usdt || 0);
   const lastSeen = loadLastSeenWallet();
-  if (!lastSeen) { saveLastSeenWallet({ walletUsd, at: Date.now() }); setBanner('walletDeltaBanner', false); return; }
+  if (!lastSeen) { saveLastSeenWallet({ walletUsd, at: Date.now() }); S.walletDelta = null; return; }
   const delta = walletUsd - lastSeen.walletUsd;
   const pct = lastSeen.walletUsd > 0 ? (delta / lastSeen.walletUsd) * 100 : 0;
   if (Math.abs(delta) >= WALLET_DELTA_THRESHOLD_USD || Math.abs(pct) >= WALLET_DELTA_THRESHOLD_PCT) {
-    S.walletDelta = { walletUsd, prev: lastSeen.walletUsd, delta, pct };
-    const sign = delta >= 0 ? '+' : '';
-    const since = ago(lastSeen.at / 1000);
-    $('walletDeltaDetail').textContent = `$${lastSeen.walletUsd.toFixed(2)} → $${walletUsd.toFixed(2)} (${sign}$${delta.toFixed(2)} · ${sign}${pct.toFixed(1)}%) since ${since||'just now'} ago`;
-    setBanner('walletDeltaBanner', true);
+    S.walletDelta = { walletUsd, prev: lastSeen.walletUsd, delta, pct, at: lastSeen.at };
   } else {
     S.walletDelta = null;
-    setBanner('walletDeltaBanner', false);
   }
 }
 function acknowledgeWalletDelta() {
   if (!S.walletDelta) return;
   saveLastSeenWallet({ walletUsd: S.walletDelta.walletUsd, at: Date.now() });
   S.walletDelta = null;
-  setBanner('walletDeltaBanner', false);
+  renderOverview();
 }
 
 // ─── Approvals (Vercel KV, shared between Alvin and Ken) ───
@@ -1136,27 +1109,30 @@ function renderOverview() {
 
   const dd = drawdownStats();
   const ddCard = dd ? (() => {
-    const ddPct = dd.peak > 0 ? (dd.maxDD / dd.peak) * 100 : 0;
     const c = dd.maxDD > 0 ? '#ef4444' : '#22c55e';
     const sub = dd.maxDD > 0
       ? (dd.currentDD > 0.5 ? `now -$${dd.currentDD.toFixed(2)} below peak` : 'recovered')
       : 'no drawdown yet';
     return { l:'Max DD', v: dd.maxDD > 0 ? '-$' + dd.maxDD.toFixed(2) : '$0', u: sub, c };
   })() : null;
+
+  // Single 'Discipline' card — worst-of (Violations / Hopium streak / Clean streak) drives colour
   const hopium = hopiumStreak();
-  const hopiumCard = hopium > 0
-    ? { l:'Hopium streak', v: hopium + 'x', u: 'consecutive closes journalled "hopium"', c:'#ef4444' }
-    : null;
+  const disciplineCard = (() => {
+    if (alerts > 0) return { l:'Discipline', v:`${alerts}!`, u:`${alerts} critical violation${alerts===1?'':'s'} · attend`, c:'#ef4444' };
+    if (warns > 0) return { l:'Discipline', v:`${warns}⚠`, u:`${warns} warning${warns===1?'':'s'}`, c:'#f59e0b' };
+    if (hopium >= 2) return { l:'Discipline', v:`${hopium}x`, u:'hopium streak · stop', c:'#ef4444' };
+    if (hopium === 1) return { l:'Discipline', v:'1x', u:'1 hopium close · watch', c:'#f59e0b' };
+    return { l:'Discipline', v:streakLabel, u:streakUnit, c:streakColor };
+  })();
 
   const primaryCards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
     ...(S.usdt > 0 ? [{l:'USDT',v:S.usdt.toFixed(2),u:'balance',c:'#26a17b'}] : []),
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
-    {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
+    disciplineCard,
     ...(ddCard ? [ddCard] : []),
-    ...(hopiumCard ? [hopiumCard] : []),
-    {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
   const cap = captureStats();
   const captureCard = cap.avgCaptured != null ? (() => {
@@ -1168,11 +1144,8 @@ function renderOverview() {
 
   const secondaryCards = [
     {l:'Total P&L',v:pnlStr(totalPnl),u:'all trades',c:totalPnl>=0?'#22c55e':'#ef4444'},
-    {l:'Trades',v:S.trades.length,u:'Jupiter swaps',c:'#8b5cf6'},
-    {l:'Win Rate',v:winRate.toFixed(0)+'%',u:`${wins}W / ${losses}L`,c:winRate>=50?'#22c55e':'#ef4444'},
+    {l:'Trades',v:S.trades.length,u:`${wins}W / ${losses}L · ${winRate.toFixed(0)}% win`,c:'#8b5cf6'},
     ...(captureCard ? [captureCard] : []),
-    {l:'Avg Size',v:'$'+avgTrade.toFixed(2),u:'per trade',c:'#f59e0b'},
-    {l:'Volume',v:'$'+totalVol.toFixed(2),u:'total traded',c:'#06b6d4'},
   ];
   
   const solValue = (S.sol||0) * (S.solPrice||0);
@@ -1194,19 +1167,24 @@ function renderOverview() {
 
   // STATUS HERO — answers "can Alvin trade right now?" + "what's the wallet worth?" in one glance
   const cardRender = c => `<div class="card" style="border:1px solid ${c.c}30"><div class="cs" style="background:${c.c}"></div><div class="cl">${c.l}</div><div class="cv" style="color:${c.c}">${c.v}</div><div class="cu">${c.u}</div></div>`;
-  let html = `<div class="panel" style="background:linear-gradient(135deg,${verdict.bg},#1a1f35);border-left:4px solid ${verdict.color};padding:18px 20px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:18px"><div style="flex:1;min-width:220px"><div style="font-size:clamp(16px,3.6vw,20px);font-weight:700;color:${verdict.color};letter-spacing:.5px">${verdict.icon} ${verdict.text}</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.45">${verdict.headline}</div></div><div style="text-align:right"><div class="cl">Wallet Value</div><div style="font-size:clamp(22px,5.5vw,30px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:10px;color:#64748b;margin-top:2px;line-height:1.4">${breakdown}</div></div></div></div>`;
+  // Inline wallet-delta pill if non-trivial change since last visit
+  let deltaPill = '';
+  if (S.walletDelta) {
+    const d = S.walletDelta;
+    const sign = d.delta >= 0 ? '+' : '';
+    const col = d.delta >= 0 ? '#22c55e' : '#ef4444';
+    deltaPill = `<button onclick="acknowledgeWalletDelta()" title="Acknowledge to reset baseline" style="margin-top:6px;background:#3b82f615;border:1px solid #3b82f6;color:${col};padding:4px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600">↗ ${sign}$${d.delta.toFixed(2)} since you last looked · ack</button>`;
+  }
+  let html = `<div class="panel" style="background:linear-gradient(135deg,${verdict.bg},#1a1f35);border-left:4px solid ${verdict.color};padding:18px 20px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:18px"><div style="flex:1;min-width:220px"><div style="font-size:clamp(16px,3.6vw,20px);font-weight:700;color:${verdict.color};letter-spacing:.5px">${verdict.icon} ${verdict.text}</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;line-height:1.45">${verdict.headline}</div></div><div style="text-align:right"><div class="cl">Wallet Value</div><div style="font-size:clamp(22px,5.5vw,30px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBalances?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:10px;color:#64748b;margin-top:2px;line-height:1.4">${breakdown}</div>${deltaPill}</div></div></div>`;
   html += renderPositionsPanel(S.positions);
   html += `<div class="cards">${primaryCards.map(cardRender).join('')}</div>`;
 
-  // P&L periods — WTD / MTD / YTD / LTD, all bounded by TRACKING_START
+  // Only WTD on Overview — the other three are all-but-equal early in a 90-day trial.
+  // MTD/YTD/LTD live on the Weekly tab.
   const pp = periodPnl();
-  const periodCard = (label, d, sub) => {
-    const col = d.pnl > 0 ? '#22c55e' : d.pnl < 0 ? '#ef4444' : '#64748b';
-    const liqBit = d.liqs ? ` · ${d.liqs} liq` : '';
-    return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
-  };
-  html += `<div class="pl" style="margin:18px 0 8px;color:#475569">P&amp;L periods</div>`;
-  html += `<div class="cards">${periodCard('WTD', pp.wtd, 'this week') + periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  const wtdCol = pp.wtd.pnl > 0 ? '#22c55e' : pp.wtd.pnl < 0 ? '#ef4444' : '#64748b';
+  const wtdLiq = pp.wtd.liqs ? ` · ${pp.wtd.liqs} liq` : '';
+  html += `<div class="cards"><div class="card" style="border:1px solid ${wtdCol}30"><div class="cs" style="background:${wtdCol}"></div><div class="cl">Week to date P&L</div><div class="cv" style="color:${wtdCol}">${pnlStr(pp.wtd.pnl)}</div><div class="cu">${pp.wtd.closes} close${pp.wtd.closes===1?'':'s'}${wtdLiq}</div></div></div>`;
   html += renderEquityCurve();
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
@@ -1248,40 +1226,6 @@ function renderOverview() {
   } else { html += '<div style="color:#475569;font-size:12px;text-align:center;padding:16px">No trades since tracking started</div>'; }
   html += '</div>';
   
-  // Hour-of-day rhythm — count of trades plus net P&L per hour. Tests the curfew
-  // hypothesis empirically: are 12am-6am trades actually losing money?
-  if (S.trades.length > 2) {
-    const hourCount = Array(24).fill(0);
-    const hourPnl = Array(24).fill(0);
-    for (const t of S.trades) {
-      hourCount[t.hour]++;
-      if (t.action !== 'Open') hourPnl[t.hour] += (t.pnl || 0);
-    }
-    const maxCount = Math.max(...hourCount, 1);
-    const maxAbsPnl = Math.max(...hourPnl.map(Math.abs), 1);
-    let rowCount = '', rowPnl = '';
-    for (let h = 0; h < 24; h++) {
-      const cur = hourCount[h], pnl = hourPnl[h];
-      const isCurfew = h >= 0 && h < 6;
-      // Top row — trade count
-      const cHt = cur > 0 ? Math.max(4, (cur / maxCount) * 50) : 2;
-      const cBg = isCurfew && cur > 0 ? '#ef4444' : '#3b82f6';
-      rowCount += `<div title="${h}:00 — ${cur} trade${cur===1?'':'s'}${pnl?` · ${pnlStr(pnl)}`:''}" style="height:${cHt.toFixed(1)}px;flex:1;background:${cBg};opacity:${cur>0?1:0.15};border-radius:2px 2px 0 0"></div>`;
-      // Bottom row — P&L bar (above/below midline based on sign)
-      const pnlPct = Math.abs(pnl) / maxAbsPnl;
-      const pHt = pnl !== 0 ? Math.max(2, pnlPct * 22) : 1;
-      const pCol = pnl > 0 ? '#22c55e' : pnl < 0 ? '#ef4444' : '#475569';
-      const align = pnl >= 0 ? 'flex-end' : 'flex-start';
-      rowPnl += `<div title="${h}:00 — ${pnlStr(pnl)}" style="flex:1;display:flex;flex-direction:column;justify-content:${align};height:46px"><div style="height:${pHt.toFixed(1)}px;background:${pCol};opacity:${pnl===0?0.15:1};border-radius:${pnl>=0?'2px 2px 0 0':'0 0 2px 2px'}"></div></div>`;
-    }
-    html += `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><div class="pl" style="margin:0">Hour of day · count + P&L (local time)</div><div style="font-size:11px;color:#94a3b8">Top: trade count · Bottom: net P&L (green up / red down)</div></div>
-      <div style="display:flex;align-items:flex-end;gap:2px;height:50px;margin-bottom:2px">${rowCount}</div>
-      <div style="height:1px;background:#475569;margin:1px 0"></div>
-      <div style="display:flex;gap:2px;height:46px">${rowPnl}</div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:#475569;margin-top:4px"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span></div>
-      <div style="font-size:10px;color:#475569;margin-top:6px">Curfew hours (12am–6am) shaded red on the count row when active. The P&L row tells you whether trading those hours actually pays off.</div>
-    </div>`;
-  }
   
   $('tab-overview').innerHTML = html;
 }
@@ -1363,7 +1307,7 @@ function renderTrades() {
 
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
-    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Peak / Captured</th><th>Fee</th><th>Flags</th><th>Journal</th><th>Sig</th>
+    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>P&L</th><th>Peak / Captured</th><th>Journal</th><th>Sig</th>
   </tr></thead><tbody>`;
 
   for (const t of S.trades) {
@@ -1378,18 +1322,17 @@ function renderTrades() {
     const sideColor = t.side === 'long' ? '#22c55e' : '#ef4444';
     const actColor = t.action === 'Liquidation' ? '#ef4444' : t.action === 'Open' ? '#8b5cf6' : '#06b6d4';
     const isLiq = t.action === 'Liquidation';
-    html += `<tr class="${isLiq||viol.some(v=>v.severity==='alert')?'ext-row':''}">
+    const hasFlags = flags.length > 0;
+    const tooltip = `Coll Δ: ${t.collateralDelta>=0?'+':''}$${t.collateralDelta.toFixed(2)} · Fee: $${t.fee.toFixed(2)}${hasFlags?` · ${flags.map(f => f.replace(/<[^>]+>/g,'')).join(' ')}`:''}`;
+    html += `<tr class="${isLiq||viol.some(v=>v.severity==='alert')?'ext-row':''}" title="${tooltip.replace(/"/g,'&quot;')}">
       <td data-label="Time" style="color:#94a3b8;white-space:nowrap">${fmtT(t.time)}</td>
-      <td data-label="Action"><span class="tag" style="background:${actColor}20;color:${actColor}">${t.action}${isLiq?' 🔴':''}</span></td>
+      <td data-label="Action"><span class="tag" style="background:${actColor}20;color:${actColor}">${t.action}${isLiq?' 🔴':''}${hasFlags?` <span style="margin-left:4px">${flags.join('')}</span>`:''}</span></td>
       <td data-label="Side" style="color:${sideColor};font-weight:600">${(t.side||'?').toUpperCase()}</td>
       <td data-label="Market" style="color:#e2e8f0">${t.market}</td>
       <td data-label="Size USD" style="font-variant-numeric:tabular-nums">$${t.sizeUsd.toFixed(2)}</td>
       <td data-label="Price" style="font-variant-numeric:tabular-nums">$${t.price.toFixed(2)}</td>
-      <td data-label="Coll Δ" style="font-variant-numeric:tabular-nums;color:${t.collateralDelta>=0?'#22c55e':'#ef4444'}">${t.collateralDelta>=0?'+':''}${t.collateralDelta.toFixed(2)}</td>
       <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.action!=='Open'?pnlStr(t.pnl):'—'}</td>
       <td data-label="Peak / Captured" style="font-variant-numeric:tabular-nums">${peakCapturedCell(t)}</td>
-      <td data-label="Fee" style="color:#475569;font-variant-numeric:tabular-nums">$${t.fee.toFixed(2)}</td>
-      <td data-label="Flags">${flags.join(' ')||'—'}</td>
       <td data-label="Journal">${journalCell(t)}</td>
       <td data-label="Sig"><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
     </tr>`;
@@ -1549,7 +1492,15 @@ function downloadWeeklyCsv() {
 function renderWeekly() {
   if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
-  let html = renderDailyPnL();
+  // P&L periods — MTD / YTD / LTD live here; WTD stays on Overview as the budget unit
+  const pp = periodPnl();
+  const periodCard = (label, d, sub) => {
+    const col = d.pnl > 0 ? '#22c55e' : d.pnl < 0 ? '#ef4444' : '#64748b';
+    const liqBit = d.liqs ? ` · ${d.liqs} liq` : '';
+    return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
+  };
+  let html = `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
     <th>Week</th><th>Closes</th><th>Capital</th><th>P&L</th><th>Win Rate</th><th>Loss vs Budget</th>
@@ -1583,56 +1534,6 @@ function renderWeekly() {
   }
   
   $('tab-weekly').innerHTML = html;
-}
-
-// ─── Trial scorecard — single-screen 'is this working?' summary ───
-function renderScorecard() {
-  const closes = S.trades.filter(t => t.action !== 'Open');
-  const totalPnl = closes.reduce((s, t) => s + (t.pnl || 0), 0);
-  const wins = closes.filter(t => t.pnl > 0).length;
-  const losses = closes.filter(t => t.pnl < 0).length;
-  const liqs = closes.filter(t => t.action === 'Liquidation').length;
-  const winRate = closes.length ? wins / closes.length * 100 : 0;
-  const cap = captureStats();
-  const dd = drawdownStats();
-  const trackingDays = Math.max(1, Math.floor((Date.now() - TRACKING_START * 1000) / 86400000));
-  const trialEnd = new Date('2026-08-03T23:59:59');
-  const daysToEnd = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400000));
-  const daysIn = Math.max(0, Math.floor((Date.now() - new Date('2026-05-05T00:00:00').getTime()) / 86400000));
-
-  const row = (label, value, status, hint) => {
-    const colors = { good: '#22c55e', warn: '#f59e0b', bad: '#ef4444', neutral: '#94a3b8' };
-    const c = colors[status] || colors.neutral;
-    const icon = status === 'good' ? '✓' : status === 'warn' ? '⚠' : status === 'bad' ? '✗' : '·';
-    return `<div style="padding:14px 16px;border-bottom:1px solid #1e293b;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px"><div><div style="font-size:13px;color:#e2e8f0;font-weight:600">${label}</div>${hint?`<div style="font-size:10px;color:#64748b;margin-top:3px">${hint}</div>`:''}</div><div style="display:flex;align-items:center;gap:12px"><div style="font-size:18px;font-weight:700;color:${c};font-variant-numeric:tabular-nums">${value}</div><span style="color:${c};font-size:14px;font-weight:700;width:18px;text-align:center">${icon}</span></div></div>`;
-  };
-
-  const trialStatus = daysIn < 0 ? 'pre-trial' : daysIn >= 90 ? 'trial complete' : `day ${daysIn + 1} of 90`;
-  const wkPnl = closes.filter(t => t.weekKey === getWeekKey(new Date())).reduce((s, t) => s + (t.pnl || 0), 0);
-  const wkLossStatus = wkPnl <= -BUDGET_WEEKLY ? 'bad' : wkPnl < 0 ? 'warn' : 'good';
-  const winStatus = winRate >= 60 ? 'good' : winRate >= 45 ? 'warn' : 'bad';
-  const capStatus = cap.avgCaptured == null ? 'neutral' : cap.avgCaptured >= 70 ? 'good' : cap.avgCaptured >= 50 ? 'warn' : 'bad';
-  const liqStatus = liqs === 0 ? 'good' : liqs <= 2 ? 'warn' : 'bad';
-  const ddPct = dd && dd.peak > 0 ? (dd.maxDD / dd.peak) * 100 : 0;
-  const ddStatus = !dd || dd.maxDD < 25 ? 'good' : dd.maxDD < 75 ? 'warn' : 'bad';
-  const hopium = hopiumStreak();
-  const hopiumStatus = hopium === 0 ? 'good' : hopium < 3 ? 'warn' : 'bad';
-
-  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:22px"><div class="pl">Trial</div><div style="font-size:clamp(20px,4vw,26px);font-weight:700;color:#e2e8f0;letter-spacing:.5px">${trialStatus}</div><div style="font-size:11px;color:#94a3b8;margin-top:6px">May 5 – Aug 3, 2026 · ${daysToEnd} day${daysToEnd===1?'':'s'} remaining · tracking active for ${trackingDays} day${trackingDays===1?'':'s'}</div></div>`;
-
-  html += `<div class="panel" style="padding:0;overflow:hidden">
-    ${row('This week\'s P&L', pnlStr(wkPnl), wkLossStatus, wkPnl <= -BUDGET_WEEKLY ? 'over loss budget — cooldown active' : 'rule: ≤ $125 weekly loss')}
-    ${row('Total realised P&L', pnlStr(totalPnl), totalPnl > 0 ? 'good' : totalPnl > -50 ? 'warn' : 'bad', `${closes.length} closes · ${wins}W / ${losses}L`)}
-    ${row('Win rate', winRate.toFixed(0) + '%', winStatus, 'aim ≥ 60%')}
-    ${row('Avg captured of peak', cap.avgCaptured == null ? '—' : cap.avgCaptured.toFixed(0) + '%', capStatus, cap.totalLeft ? `$${cap.totalLeft.toFixed(0)} total left on the table` : 'how often you took the gain you had')}
-    ${row('Liquidations', liqs, liqStatus, liqs ? 'keep <3 over 90 days' : 'no liquidations')}
-    ${row('Max drawdown', dd && dd.maxDD > 0 ? '-$' + dd.maxDD.toFixed(2) : '$0', ddStatus, dd && dd.peak > 0 ? `${ddPct.toFixed(0)}% from peak` : 'no peak yet')}
-    ${row('Hopium streak', hopium + 'x', hopiumStatus, 'consecutive closes journalled hopium')}
-    ${row('Open positions', (S.positions||[]).length, (S.positions||[]).length > 3 ? 'warn' : 'good', 'max 6 (3L/3S)')}
-  </div>`;
-
-  html += `<div class="panel" style="text-align:center;font-style:italic;color:#94a3b8;padding:20px">"The goal is not to win trades. The goal is to get bored."</div>`;
-  $('tab-scorecard').innerHTML = html;
 }
 
 function renderRules() {
@@ -1936,7 +1837,6 @@ async function init() {
     renderCompliance();
     renderWeekly();
     renderMultisig();
-    renderScorecard();
     renderRules();
     renderAlerts();
     applyRegimeUI();
@@ -1944,7 +1844,6 @@ async function init() {
     tickTakeProfit();
     tickCooldown();
     checkWalletDelta();
-    detectNewPositions();
     if (loadFocus()) renderFocusCockpit();
 
     $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> live';
@@ -2178,16 +2077,8 @@ function tickFreshness() {
   const secs = Math.floor((Date.now() - S.lastUpdated) / 1000);
   const rel = secs < 60 ? secs + 's ago' : secs < 3600 ? Math.floor(secs/60) + 'm ago' : Math.floor(secs/3600) + 'h ago';
   const stale = secs > REFRESH_MS/1000 * 2;
+  // Stale state surfaces inline via the "Updated Xm ago" amber colour; no banner.
   $('updAt').innerHTML = `Updated <span style="color:${stale?'#f59e0b':'#475569'}">${rel}</span>`;
-  // Surface a banner when refresh has been silently failing for more than 5 min.
-  if ($('staleBanner')) {
-    if (secs > 300) {
-      $('staleDetail').textContent = `Last successful refresh ${rel}. Auto-refresh runs every ${REFRESH_MS/1000}s — check the network or click Refresh.`;
-      setBanner('staleBanner', true);
-    } else {
-      setBanner('staleBanner', false);
-    }
-  }
 }
 setInterval(tickFreshness, 1000);
 setInterval(() => { if (!$('rBtn').disabled && document.visibilityState === 'visible') init(); }, REFRESH_MS);
