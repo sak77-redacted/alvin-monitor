@@ -990,12 +990,12 @@ function checkCompliance(trades) {
       violations.push({ type: 'CURFEW', severity: 'info', time: t.time, sig: t.sig, detail: `Trade at ${hh}:${mm} · rule is no trading 12am–6am` });
     }
 
-    // 4. Revenge trade detection (trade within 10 min of a losing previous trade)
+    // 4. Revenge trade detection (trade within 60 min of a losing previous trade)
     if (i < trades.length - 1) {
       const prev = trades[i + 1];
-      if (prev.pnl < -0.5 && (t.time - prev.time) < 600) {
+      if (prev.pnl < -0.5 && (t.time - prev.time) < 3600) {
         const mins = Math.max(1, Math.floor((t.time-prev.time)/60));
-        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${mins}min after a $${Math.abs(prev.pnl).toFixed(2)} loss · rule is 10min cooldown after losses` });
+        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${mins}min after a $${Math.abs(prev.pnl).toFixed(2)} loss · rule is 60min cooldown after losses` });
       }
     }
   }
@@ -1090,11 +1090,11 @@ function tradeCheck() {
   const lastTrade = S.trades[0];
   if (lastTrade && lastTrade.pnl < -0.5) {
     const sinceSec = (Date.now()/1000) - lastTrade.time;
-    if (sinceSec < 600) {
-      const left = Math.ceil((600 - sinceSec) / 60);
-      checks.push({ ok:false, name:'Post-loss', reason:`Last trade lost $${Math.abs(lastTrade.pnl).toFixed(2)} · wait ${left}min more (rule: 10min)` });
+    if (sinceSec < 3600) {
+      const left = Math.ceil((3600 - sinceSec) / 60);
+      checks.push({ ok:false, name:'Post-loss', reason:`Last trade lost $${Math.abs(lastTrade.pnl).toFixed(2)} · wait ${left}min more (rule: 60min)` });
     } else {
-      checks.push({ ok:true, name:'Post-loss', reason:'10min cooldown after last loss has cleared' });
+      checks.push({ ok:true, name:'Post-loss', reason:'60min cooldown after last loss has cleared' });
     }
   } else {
     checks.push({ ok:true, name:'Post-loss', reason:'No recent loss in window' });

@@ -1,0 +1,36 @@
+name: digest-cron
+
+# Sends Ken a Monday-morning weekly digest WhatsApp at 9am AEST.
+# 9am AEST (UTC+10) = 23:00 UTC the previous (Sunday). The trial runs
+# May–Aug 2026 — entirely AEST, no DST switch — so this single UTC
+# schedule is correct for the trial duration.
+#
+# Reuses the existing CRON_SECRET (same value as the 5-min check workflow).
+
+on:
+  schedule:
+    - cron: '0 23 * * 0'   # Sunday 23:00 UTC = Monday 09:00 AEST
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hit /api/cron/digest
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret missing"; exit 1
+          fi
+          response=$(curl -sS -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "https://alvin-monitor.vercel.app/api/cron/digest")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::digest endpoint returned $status"; exit 1
+          fi
