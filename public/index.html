@@ -151,6 +151,17 @@
   </div>
 </div>
 
+<div id="weeklyNoteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:24px;max-width:560px;width:100%">
+    <input type="hidden" id="weeklyNoteKey">
+    <div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px">Weekly review</div>
+    <div id="weeklyNoteHeader" style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:10px"></div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;line-height:1.5">What worked? What to change? Regime check? One-line thesis for next week. Skip anything you don't want to answer.</div>
+    <textarea id="weeklyNoteText" rows="6" placeholder="e.g. avg captured was 45% — kept holding past 2x. Curfew window's right but Sunday evening losses are stacking. Stay in 'consistent' regime next week." style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:10px;border-radius:4px;font-family:inherit;font-size:12px;resize:vertical;width:100%;line-height:1.5"></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px"><button onclick="closeWeeklyNote()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">cancel</button><button onclick="saveWeeklyNote()" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">save</button></div>
+  </div>
+</div>
+
 <div id="rulesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
   <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase">Trading rules</div><div style="font-size:11px;color:#475569;margin-top:2px">Alvin & Ken · 90-day trial</div></div><button onclick="closeRulesModal()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer">close</button></div>
@@ -587,6 +598,40 @@ async function clearTarget() {
   } catch {
     if (prev) S.targets[pubkey] = prev;
     renderOverview(); renderMultisig();
+  }
+}
+
+function weeklyNoteSig(weekKey) { return 'week:' + weekKey; }
+function openWeeklyNote(weekKey) {
+  const sig = weeklyNoteSig(weekKey);
+  $('weeklyNoteKey').value = weekKey;
+  $('weeklyNoteHeader').textContent = `Week of ${weekKey}`;
+  const j = S.journal[sig];
+  $('weeklyNoteText').value = j?.reflection || '';
+  const m = $('weeklyNoteModal'); if (m) m.style.display = 'flex';
+}
+function closeWeeklyNote() { const m = $('weeklyNoteModal'); if (m) m.style.display = 'none'; }
+async function saveWeeklyNote() {
+  const by = loadIdentity();
+  if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
+  const weekKey = $('weeklyNoteKey').value;
+  const sig = weeklyNoteSig(weekKey);
+  const reflection = $('weeklyNoteText').value;
+  const entry = { sig, by, rules: '', exit: '', distractions: '', thesis: '', reflection };
+  S.journal[sig] = { ...entry, at: Date.now() };
+  closeWeeklyNote();
+  renderWeekly();
+  try {
+    const r = await fetch('/api/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    delete S.journal[sig];
+    renderWeekly();
+    alert('Failed to save weekly note: ' + e.message);
   }
 }
 
@@ -1549,7 +1594,7 @@ function renderWeekly() {
   html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
-    <th>Week</th><th>Closes</th><th>Capital</th><th>P&L</th><th>Win Rate</th><th>Loss vs Budget</th>
+    <th>Week</th><th>Closes</th><th>Capital</th><th>P&L</th><th>Win Rate</th><th>Loss vs Budget</th><th>Review</th>
   </tr></thead><tbody>`;
 
   for (const w of S.weeklyData) {
@@ -1562,6 +1607,7 @@ function renderWeekly() {
       <td data-label="P&L" class="${pnlClass(w.totalPnl)}" style="font-weight:600">${pnlStr(w.totalPnl)}</td>
       <td data-label="Win Rate" style="color:${wr>=50?'#22c55e':'#ef4444'}">${wr.toFixed(0)}%</td>
       <td data-label="Budget">${overLossBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+Math.abs(w.totalPnl+BUDGET_WEEKLY).toFixed(2)+' past loss cap)</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
+      <td data-label="Review">${(() => { const j = S.journal[weeklyNoteSig(w.key)]; return j?.reflection ? `<button onclick="openWeeklyNote('${w.key}')" title="${(j.reflection||'').replace(/"/g,'&quot;').slice(0,200)}" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ ${j.reflection.length} chars</button>` : `<button onclick="openWeeklyNote('${w.key}')" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">📝 add</button>`; })()}</td>
     </tr>`;
   }
   html += '</tbody></table></div></div>';
