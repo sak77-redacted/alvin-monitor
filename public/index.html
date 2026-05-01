@@ -98,6 +98,7 @@
       <div class="tmain">Alvin <span>Trading Monitor</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <select id="regimeSel" onchange="setRegime(this.value)" title="Trading regime — affects take-profit thresholds" style="background:#0f1923;border:1px solid #1e293b;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer"><option value="consistent">📈 Consistent · 2x/3x</option><option value="trend">🚀 Trend · 5x/10x</option></select>
       <button id="muteBtn" onclick="toggleMute()" title="Toggle alert sounds" style="background:#0f1923;border:1px solid #475569;color:#94a3b8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer">🔔</button>
       <button id="focusBtn" onclick="toggleFocus()" style="background:#0f1923;border:1px solid #475569;color:#94a3b8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer">🎯 Focus</button>
       <select id="who" onchange="saveIdentity(this.value)" style="background:#0f1923;border:1px solid #1e293b;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer"><option value="">? who are you</option><option value="alvin">I am Alvin</option><option value="ken">I am Ken</option></select>
@@ -225,7 +226,19 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{}, targets:{} };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{}, targets:{}, settings:{} };
+
+// Regime → TP alert thresholds in multiples of collateral.
+// 'consistent' (default): tier2 at 2x money-out (= pnl >= 1×collateral), tier3 at 3x.
+// 'trend':                tier2 at 5x money-out (= pnl >= 4×collateral), tier3 at 10x.
+const REGIMES = {
+  consistent: { tier2: 1, tier3: 2, label2: '2x', label3: '3x', name: 'Consistent · 2x/3x' },
+  trend:      { tier2: 4, tier3: 9, label2: '5x', label3: '10x', name: 'Trend chasing · 5x/10x' },
+};
+function currentRegime() {
+  const r = S.settings?.regime;
+  return REGIMES[r] || REGIMES.consistent;
+}
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -493,6 +506,41 @@ async function fetchTargets() {
     const d = await r.json();
     S.targets = d.targets || {};
   } catch {}
+}
+
+async function fetchSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.settings = d.settings || {};
+  } catch {}
+}
+
+async function setRegime(value) {
+  const by = loadIdentity();
+  if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
+  if (!REGIMES[value]) return;
+  const prev = S.settings?.regime;
+  S.settings.regime = value;
+  applyRegimeUI();
+  rerenderApprovalUI();
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'regime', value, by }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    S.settings.regime = prev;
+    applyRegimeUI();
+    alert('Failed to save regime: ' + e.message);
+  }
+}
+
+function applyRegimeUI() {
+  const sel = $('regimeSel'); if (sel) sel.value = S.settings?.regime || 'consistent';
 }
 
 function openTargetModal(pubkey) {
@@ -1791,6 +1839,7 @@ async function init() {
       fetchSamples(),         // side-effect only, not destructured
       fetchJournal(),         // side-effect only, not destructured
       fetchTargets(),         // side-effect only, not destructured
+      fetchSettings(),        // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
@@ -1837,6 +1886,7 @@ async function init() {
     renderMultisig();
     renderRules();
     renderAlerts();
+    applyRegimeUI();
     tickLiqAlert();
     tickTakeProfit();
     tickCooldown();
@@ -1908,7 +1958,7 @@ function tpRatio(p) {
   const pnl = numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees);
   return c > 0 ? pnl / c : 0;
 }
-function tpTier(p) { const r = tpRatio(p); return r >= 2 ? 3 : r >= 1 ? 2 : 0; }
+function tpTier(p) { const r = tpRatio(p), reg = currentRegime(); return r >= reg.tier3 ? 3 : r >= reg.tier2 ? 2 : 0; }
 function takeProfitTriggers() {
   return (S.positions || []).map(p => ({ p, tier: tpTier(p), ratio: tpRatio(p) })).filter(x => x.tier > 0);
 }
@@ -1953,14 +2003,15 @@ function tickTakeProfit() {
   if (acked) { setBanner('takeProfitBanner', false); return; }
 
   const headline = $('takeProfitHeadline'), detail = $('takeProfitDetail'), banner = $('takeProfitBanner');
+  const reg = currentRegime();
   if (maxTier === 3) {
-    headline.textContent = '🚨 TAKE PROFIT NOW · 3x · DON\'T BE A RETARD';
+    headline.textContent = `🚨 TAKE PROFIT NOW · ${reg.label3} · DON'T BE A RETARD`;
     headline.style.color = '#ef4444';
     detail.style.color = '#fca5a5';
     banner.style.background = '#dc262620';
     banner.style.borderColor = '#ef4444';
   } else {
-    headline.textContent = '⚠ TAKE PROFIT · hit 2x · greed is hopium';
+    headline.textContent = `⚠ TAKE PROFIT · hit ${reg.label2} · greed is hopium`;
     headline.style.color = '#f59e0b';
     detail.style.color = '#fcd34d';
     banner.style.background = '#f59e0b18';
