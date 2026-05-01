@@ -151,6 +151,13 @@
   </div>
 </div>
 
+<div id="rulesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:22px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase">Trading rules</div><div style="font-size:11px;color:#475569;margin-top:2px">Alvin & Ken · 90-day trial</div></div><button onclick="closeRulesModal()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer">close</button></div>
+    <div id="rulesModalBody"></div>
+  </div>
+</div>
+
 <div id="targetModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
   <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:24px;max-width:480px;width:100%">
     <input type="hidden" id="targetPubkey">
@@ -184,7 +191,6 @@
   <button class="tab" onclick="stab('compliance',this)">Compliance</button>
   <button class="tab" onclick="stab('weekly',this)">Weekly</button>
   <button class="tab" onclick="stab('multisig',this)">Multisig</button>
-  <button class="tab" onclick="stab('rules',this)">Rules</button>
 </div>
 
 <div class="cnt">
@@ -193,10 +199,9 @@
   <div id="tab-compliance" class="hidden"></div>
   <div id="tab-weekly" class="hidden"></div>
   <div id="tab-multisig" class="hidden"></div>
-  <div id="tab-rules" class="hidden"></div>
 </div>
 
-<div class="footer">Trial: May 5 – Aug 3, 2026 · Alvin & Ken Trading Control Framework · Data via Helius Enhanced API</div>
+<div class="footer">Trial: May 5 – Aug 3, 2026 · Alvin & Ken Trading Control Framework · Data via Helius Enhanced API · <a href="#" onclick="openRulesModal();return false" style="color:#64748b;text-decoration:underline">Rules</a></div>
 
 <script>
 const W = "6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt";
@@ -1185,7 +1190,6 @@ function renderOverview() {
   const wtdCol = pp.wtd.pnl > 0 ? '#22c55e' : pp.wtd.pnl < 0 ? '#ef4444' : '#64748b';
   const wtdLiq = pp.wtd.liqs ? ` · ${pp.wtd.liqs} liq` : '';
   html += `<div class="cards"><div class="card" style="border:1px solid ${wtdCol}30"><div class="cs" style="background:${wtdCol}"></div><div class="cl">Week to date P&L</div><div class="cv" style="color:${wtdCol}">${pnlStr(pp.wtd.pnl)}</div><div class="cu">${pp.wtd.closes} close${pp.wtd.closes===1?'':'s'}${wtdLiq}</div></div></div>`;
-  html += renderEquityCurve();
   
   // Budget gauge — driven by total wallet USD (SOL + USDC)
   if (haveBalances) {
@@ -1196,15 +1200,16 @@ function renderOverview() {
     html += `<div class="panel"><div class="pl">Budget: $${wallet.toFixed(2)} / $${BUDGET_WEEKLY} weekly · tracking from ${trackLabel}</div><div class="gtrk"><div class="gfil" style="width:${pct}%;background:${gc}"></div></div><div class="glbl"><span style="color:#94a3b8">$${wallet.toFixed(2)} in wallet</span><span style="color:${over?'#ef4444':'#64748b'}">${over?'⚠ $'+(wallet-BUDGET_WEEKLY).toFixed(2)+' OVER':'$'+(BUDGET_WEEKLY-wallet).toFixed(2)+' remaining'}</span></div></div>`;
   }
   
-  // Pre-trade check details — verdict is already in the status hero up top, so this panel
-  // is just the per-check breakdown ("why").
-  html += `<div class="panel"><div class="pl" style="margin-bottom:8px">Pre-trade check · why</div>`;
-  html += checks.map(c => {
+  // Pre-trade check breakdown — collapsed by default since the verdict is already
+  // in the status hero. Only Alvin-curious-about-why or a failed/cautioned state
+  // needs the per-check detail.
+  const failedOrCautioned = (blocked.length + cautions.length) > 0;
+  const checksHtml = checks.map(c => {
     const i = c.ok === true ? '✓' : c.ok === 'warn' ? '⚠' : '✗';
     const co = c.ok === true ? '#22c55e' : c.ok === 'warn' ? '#f59e0b' : '#ef4444';
     return `<div style="padding:5px 0;font-size:11px;display:flex;gap:10px;align-items:flex-start"><span style="color:${co};font-weight:700;width:14px;flex-shrink:0">${i}</span><span style="color:#94a3b8;min-width:100px;flex-shrink:0">${c.name}</span><span style="color:#64748b;flex:1">${c.reason}</span></div>`;
   }).join('');
-  html += `</div>`;
+  html += `<details class="panel" style="padding:14px"${failedOrCautioned?' open':''}><summary style="cursor:pointer;list-style:none;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center"><span>Pre-trade check · why</span><span style="color:#475569;font-size:10px">${failedOrCautioned ? blocked.length + cautions.length + ' to review' : 'all clear · click to expand'}</span></summary><div style="margin-top:10px">${checksHtml}</div></details>`;
 
   // Secondary cards — all-time stats, deprioritised below the actionable stuff.
   html += `<div class="pl" style="margin:18px 0 8px;color:#475569">All-time stats</div>`;
@@ -1500,6 +1505,7 @@ function renderWeekly() {
     return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
   };
   let html = `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  html += renderEquityCurve();
   html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
@@ -1536,7 +1542,7 @@ function renderWeekly() {
   $('tab-weekly').innerHTML = html;
 }
 
-function renderRules() {
+function rulesHtml() {
   const rs = [
     {r:'Weekly budget',v:'$125 USDC released every Monday',c:'💰'},
     {r:'Max entry',v:'5% of weekly (~$6.25). Start at 1%',c:'📏'},
@@ -1548,8 +1554,10 @@ function renderRules() {
     {r:'Escalation',v:'External reload → Ken notifies Queenie',c:'🚨',a:1},
     {r:'The goal',v:'Get bored. Make it feel like work.',c:'🎯'},
   ];
-  $('tab-rules').innerHTML = rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('') + '<div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div>';
+  return rs.map(x=>`<div class="rule ${x.a?'alert':''}"><span style="font-size:18px;width:28px;text-align:center">${x.c}</span><div><div style="font-size:10px;color:${x.a?'#ef4444':'#f59e0b'};font-weight:700;text-transform:uppercase;letter-spacing:1px">${x.r}</div><div style="font-size:13px;color:#e2e8f0;margin-top:2px">${x.v}</div></div></div>`).join('') + '<div style="margin-top:18px;padding:16px;background:#1e293b;border-radius:8px;text-align:center;font-size:13px;color:#94a3b8;font-style:italic">"The goal is not to win trades. The goal is to get bored."</div>';
 }
+function openRulesModal() { const b = $('rulesModalBody'); if (b) b.innerHTML = rulesHtml(); const m = $('rulesModal'); if (m) m.style.display = 'flex'; }
+function closeRulesModal() { const m = $('rulesModal'); if (m) m.style.display = 'none'; }
 
 // ─── Position rendering ───
 function renderPositionCard(p) {
@@ -1837,7 +1845,6 @@ async function init() {
     renderCompliance();
     renderWeekly();
     renderMultisig();
-    renderRules();
     renderAlerts();
     applyRegimeUI();
     tickLiqAlert();
@@ -2087,7 +2094,6 @@ $('who').value = loadIdentity();
 if (!loadIdentity()) { const m = $('identityModal'); if (m) m.style.display = 'flex'; }
 applyMute();
 applyFocus();
-renderRules();
 init();
 </script>
 </body>
