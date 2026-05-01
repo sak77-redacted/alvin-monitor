@@ -173,6 +173,7 @@
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
 <div id="staleBanner" class="abanner hidden" style="background:#f59e0b15;border:1px solid #f59e0b"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px">⏱ DATA STALE</div><div id="staleDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="init()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">retry now</button></div></div>
+<div id="liqBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #ef4444;animation:tpPulse 1s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⚠ LIQUIDATION CLOSE — &lt;5% AWAY</div><div id="liqDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="acknowledgeLiq()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'm watching</button></div></div>
 <div id="takeProfitBanner" class="abanner hidden" style="border:2px solid #f59e0b;animation:tpPulse 1.4s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div id="takeProfitHeadline" style="font-size:16px;font-weight:700;margin-bottom:6px"></div><div id="takeProfitDetail" style="font-size:13px"></div></div><button onclick="acknowledgeTakeProfit()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'll take it</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
 <div id="bannerCycle" class="hidden" onclick="cycleBanner()" style="margin:6px 24px 0;padding:6px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;font-size:11px;color:#94a3b8;cursor:pointer;text-align:center"></div>
@@ -239,7 +240,7 @@ async function fetchPositions(addr) {
 const REFRESH_MS = 60_000; // auto-refresh interval
 
 // ─── Banner coordinator — show only the highest-priority active banner at a time ───
-const BANNER_PRIORITY = ['takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
+const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
 let _bannerCycleIdx = 0;
 function setBanner(id, on) {
   const el = $(id); if (!el) return;
@@ -1736,6 +1737,7 @@ async function init() {
     renderMultisig();
     renderRules();
     renderAlerts();
+    tickLiqAlert();
     tickTakeProfit();
     tickCooldown();
     checkWalletDelta();
@@ -1756,6 +1758,44 @@ async function init() {
   $('rBtn').disabled = false;
   $('rBtn').textContent = '↻ Refresh';
 }
+
+// ─── Liquidation proximity alarm (any position < 5% from liquidation) ───
+let _liqLastTier = 0;
+let _liqAcked = 0;
+function liqDistancePct(p) {
+  const liq = numish(p.liquidationPrice);
+  const mark = numish(p.markPrice ?? p.currentPrice ?? p.indexPrice);
+  if (!liq || !mark) return 100;
+  const side = (p.side || '').toLowerCase();
+  return side === 'long' ? ((mark - liq) / mark) * 100 : ((liq - mark) / mark) * 100;
+}
+function tickLiqAlert() {
+  if (!$('liqBanner')) return;
+  const atRisk = (S.positions || []).filter(p => {
+    const d = liqDistancePct(p);
+    return d > 0 && d < 5;
+  });
+  if (!atRisk.length) {
+    setBanner('liqBanner', false);
+    _liqLastTier = 0; _liqAcked = 0;
+    return;
+  }
+  const acked = _liqAcked && (Date.now()/1000 - _liqAcked < 120); // ack mutes for 2 min only
+  if (acked) { setBanner('liqBanner', false); return; }
+  const desc = atRisk.map(p => {
+    const d = liqDistancePct(p);
+    const mkt = p.market || tokenSymbol(p.marketMint);
+    return `${(p.side||'').toUpperCase()} ${mkt} · ${d.toFixed(2)}% from liq · mark $${numish(p.markPrice ?? p.currentPrice).toFixed(2)} liq $${numish(p.liquidationPrice).toFixed(2)}`;
+  }).join(' · ');
+  $('liqDetail').textContent = desc;
+  setBanner('liqBanner', true);
+  // Beep on first time below 5%, three beeps if any drops below 2%
+  const minDist = Math.min(...atRisk.map(liqDistancePct));
+  const tier = minDist < 2 ? 3 : 2;
+  if (tier > _liqLastTier) playTpBeep(tier);
+  _liqLastTier = tier;
+}
+function acknowledgeLiq() { _liqAcked = Math.floor(Date.now()/1000); tickLiqAlert(); }
 
 // ─── Take-profit alert (2x / 3x of position collateral) ───
 // 2x trigger:  pnl  ≥  collateral   (100% return on margin)
