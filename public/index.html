@@ -1038,9 +1038,44 @@ function downloadTradesCsv() {
   URL.revokeObjectURL(url);
 }
 
+function perAssetStats() {
+  const map = {};
+  for (const t of S.trades) {
+    if (t.action === 'Open') continue;
+    const k = t.market || (t.asset ? t.asset + '-PERP' : '?');
+    if (!map[k]) map[k] = { market: k, closes: 0, pnl: 0, wins: 0, losses: 0, liqs: 0, longs: 0, shorts: 0 };
+    const m = map[k];
+    m.closes++;
+    m.pnl += t.pnl || 0;
+    if (t.pnl > 0) m.wins++; else if (t.pnl < 0) m.losses++;
+    if (t.action === 'Liquidation') m.liqs++;
+    if (t.side === 'long') m.longs++;
+    if (t.side === 'short') m.shorts++;
+  }
+  return Object.values(map).sort((a, b) => b.closes - a.closes);
+}
+
 function renderTrades() {
   if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
-  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
+  let html = '';
+
+  // Per-market breakdown — answers 'which asset is Alvin good/bad at?' at a glance
+  const assetStats = perAssetStats();
+  if (assetStats.length) {
+    html += `<div class="pl" style="margin:0 0 8px;color:#475569">Per-market</div>`;
+    html += `<div class="cards" style="margin-bottom:18px">`;
+    for (const s of assetStats) {
+      const winRate = s.closes ? (s.wins / s.closes * 100) : 0;
+      const c = s.pnl >= 0 ? '#22c55e' : '#ef4444';
+      const sub = `${s.closes} close${s.closes===1?'':'s'} · ${winRate.toFixed(0)}% win${s.liqs ? ` · ${s.liqs} liq` : ''}`;
+      const sideMix = s.longs && s.shorts
+        ? ` · ${s.longs}L/${s.shorts}S` : s.longs ? ` · all long` : s.shorts ? ` · all short` : '';
+      html += `<div class="card" style="border:1px solid ${c}30"><div class="cs" style="background:${c}"></div><div class="cl">${s.market}</div><div class="cv" style="color:${c}">${pnlStr(s.pnl)}</div><div class="cu">${sub}${sideMix}</div></div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
     <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Fee</th><th>Flags</th><th>Journal</th><th>Sig</th>
   </tr></thead><tbody>`;
