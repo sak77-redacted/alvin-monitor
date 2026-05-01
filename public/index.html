@@ -1687,7 +1687,12 @@ function renderPositionCard(p) {
       const distAbs = Math.abs(dist);
       const distCol = distAbs < 1 ? '#22c55e' : distAbs < 5 ? '#f59e0b' : '#94a3b8';
       const arrow = goodSign ? '↑' : '↓';
-      targetRow = `<div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center"><span style="color:#60a5fa">📍 Target $${tgt.toFixed(2)}</span><span style="color:${distCol}">${arrow} ${distAbs.toFixed(2)}% from mark</span>${target.thesis?`<span style="color:#64748b;font-style:italic">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto">edit</button></div>`;
+      const hit = side === 'long' ? mark >= tgt : side === 'short' ? mark <= tgt : false;
+      if (hit) {
+        targetRow = `<div style="font-size:12px;color:#22c55e;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center;font-weight:700;background:#22c55e10;border:1px solid #22c55e50;border-radius:6px;padding:6px 10px"><span>🎯 TARGET HIT — close per plan</span><span style="color:#94a3b8;font-weight:400">target $${tgt.toFixed(2)} · mark $${mark.toFixed(2)}</span>${target.thesis?`<span style="color:#64748b;font-style:italic;font-weight:400">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto;font-weight:400">edit</button></div>`;
+      } else {
+        targetRow = `<div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center"><span style="color:#60a5fa">📍 Target $${tgt.toFixed(2)}</span><span style="color:${distCol}">${arrow} ${distAbs.toFixed(2)}% from mark</span>${target.thesis?`<span style="color:#64748b;font-style:italic">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto">edit</button></div>`;
+      }
     } else {
       targetRow = `<div style="font-size:11px;margin-bottom:6px"><button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:1px dashed #475569;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:10px;padding:4px 10px;border-radius:4px">📍 set exit target →</button></div>`;
     }
@@ -1960,6 +1965,7 @@ async function init() {
     applyRegimeUI();
     tickLiqAlert();
     tickTakeProfit();
+    tickTargetHit();
     tickCooldown();
     checkWalletDelta();
     if (loadFocus()) renderFocusCockpit();
@@ -1978,6 +1984,33 @@ async function init() {
   $('pWrap').classList.add('hidden');
   $('rBtn').disabled = false;
   $('rBtn').textContent = '↻ Refresh';
+}
+
+// ─── Exit-target hit alarm — when mark crosses Alvin's declared exit price ───
+let _targetHitState = new Set(); // pubkey:targetPrice keys that already pinged this session
+function tickTargetHit() {
+  for (const p of (S.positions || [])) {
+    if (!p.positionPubkey) continue;
+    const tgt = S.targets?.[p.positionPubkey];
+    if (!tgt || typeof tgt.exitPrice !== 'number' || tgt.exitPrice <= 0) continue;
+    const target = tgt.exitPrice;
+    const mark = numish(p.markPrice ?? p.currentPrice ?? p.indexPrice);
+    if (!mark) continue;
+    const side = (p.side || '').toLowerCase();
+    const hit = side === 'long' ? mark >= target : side === 'short' ? mark <= target : false;
+    const key = `${p.positionPubkey}:${target.toFixed(4)}`;
+    if (!hit) { _targetHitState.delete(key); continue; }
+    if (_targetHitState.has(key)) continue;
+    _targetHitState.add(key);
+    const pnl = numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees);
+    const collat = numish(p.collateralUsd);
+    const ratio = collat > 0 ? pnl / collat : 0;
+    const ratioStr = ratio > 0 ? ` · ${ratio.toFixed(2)}x of collateral` : '';
+    const thesisLine = tgt.thesis ? `\n\nThesis: "${tgt.thesis}"` : '';
+    notifyWA('both',
+      `🎯 EXIT TARGET HIT · ${side.toUpperCase()} ${p.market || tokenSymbol(p.marketMint)}\n\nMark $${mark.toFixed(2)} ${side==='long'?'≥':'≤'} target $${target.toFixed(2)}\nUnrealised ${pnlStr(pnl)}${ratioStr}${thesisLine}\n\nClose per your plan.`,
+      `tgt:${key}`, 4 * 3600);
+  }
 }
 
 // ─── Liquidation proximity alarm (any position < 5% from liquidation) ───
