@@ -508,6 +508,17 @@ async function fetchSettings() {
   } catch {}
 }
 
+// ─── WhatsApp push (CallMeBot via /api/notify) ───
+async function notifyWA(to, message, dedupKey, dedupTtlSec) {
+  try {
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, message, dedupKey, dedupTtlSec }),
+    });
+  } catch {}
+}
+
 async function setRegime(value) {
   const by = loadIdentity();
   if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
@@ -1908,6 +1919,16 @@ async function init() {
     $('pBar').style.width = '92%';
     S.trades = parsePerpsTrades(rawPerpsTrades);
 
+    // WhatsApp: any liquidation in the last 30 minutes that hasn't been notified yet.
+    // Dedup is by txHash — fires exactly once per liquidation, ever.
+    const cutoff = (Date.now() / 1000) - 30 * 60;
+    for (const t of S.trades) {
+      if (t.action !== 'Liquidation' || t.time < cutoff) continue;
+      notifyWA('both',
+        `🔴 LIQUIDATION · ${(t.side||'').toUpperCase()} ${t.market}\n\nLost $${Math.abs(t.pnl||0).toFixed(2)} · ${fmtT(t.time)}\n\nCooldown rules now apply.`,
+        `liq:${t.sig}`, 30 * 86400);
+    }
+
     // Compliance check
     setStatus('Checking compliance…');
     S.violations = checkCompliance(S.trades);
@@ -1992,7 +2013,15 @@ function tickLiqAlert() {
   // Beep on first time below 5%, three beeps if any drops below 2%
   const minDist = Math.min(...atRisk.map(liqDistancePct));
   const tier = minDist < 2 ? 3 : 2;
-  if (tier > _liqLastTier) playTpBeep(tier);
+  if (tier > _liqLastTier) {
+    playTpBeep(tier);
+    // WhatsApp — Alvin only, dedup per position. <2% gets a tighter window.
+    const pk = atRisk[0].positionPubkey || 'unknown';
+    const headline = tier === 3 ? `🔴 LIQUIDATION IMMINENT · <2% AWAY` : `⚠ LIQUIDATION CLOSE · <5% AWAY`;
+    notifyWA('alvin',
+      `${headline}\n\n${desc}\n\nClose, add collateral, or get liquidated.`,
+      `liqClose:${pk}:t${tier}`, tier === 3 ? 600 : 1800);
+  }
   _liqLastTier = tier;
 }
 function acknowledgeLiq() { _liqAcked = Math.floor(Date.now()/1000); tickLiqAlert(); }
@@ -2054,7 +2083,7 @@ function tickTakeProfit() {
   const headline = $('takeProfitHeadline'), detail = $('takeProfitDetail'), banner = $('takeProfitBanner');
   const reg = currentRegime();
   if (maxTier === 3) {
-    headline.textContent = `🚨 TAKE PROFIT NOW · ${reg.label3} · DON'T BE A RETARD`;
+    headline.textContent = `🚨 TAKE PROFIT NOW · ${reg.label3} · DON'T BE AN AWHEAD!`;
     headline.style.color = '#ef4444';
     detail.style.color = '#fca5a5';
     banner.style.background = '#dc262620';
@@ -2074,7 +2103,22 @@ function tickTakeProfit() {
   setBanner('takeProfitBanner', true);
 
   // Beep once when tier crosses upward (2 → first time, 3 → first time at 3)
-  if (maxTier > _tpLastTier) playTpBeep(maxTier);
+  if (maxTier > _tpLastTier) {
+    playTpBeep(maxTier);
+    // WhatsApp push — dedup by positionPubkey so we don't re-spam if the price oscillates
+    const lead = triggers.sort((a,b) => b.tier - a.tier)[0];
+    const pk = lead.p.positionPubkey || 'unknown';
+    const sweep = triggers.reduce((s, t) => s + numish(t.p.pnlAfterFeesUsd ?? t.p.pnl), 0);
+    if (maxTier === 3) {
+      notifyWA('both',
+        `🚨 TAKE PROFIT NOW · ${reg.label3} · DON'T BE AN AWHEAD!\n\n${summary}\n\nClose and sweep $${sweep.toFixed(0)} → multisig (${short(MS)}).`,
+        `tp3:${pk}`, 3 * 3600);
+    } else {
+      notifyWA('alvin',
+        `⚠ TAKE PROFIT · hit ${reg.label2} · greed is hopium\n\n${summary}\n\nAfter close, sweep $${sweep.toFixed(0)} → multisig.`,
+        `tp2:${pk}:${getWeekKey(new Date())}`, 6 * 3600);
+    }
+  }
   _tpLastTier = maxTier;
 }
 
