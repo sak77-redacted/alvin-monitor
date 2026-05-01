@@ -381,9 +381,15 @@ function acknowledgeWalletDelta() {
 }
 
 // ─── Approvals (Vercel KV, shared between Alvin and Ken) ───
-// REVENGE / WALLET / COOLDOWN need both Alvin AND Ken to approve before clearing.
-// Other types clear with a single approval.
+// REVENGE / WALLET / COOLDOWN need both Alvin AND Ken to approve before clearing,
+// AND the approval is time-locked: it only becomes effective TIME_LOCK_HOURS after
+// the LATEST co-approval. Friction-as-feature — converts impulse overrides into
+// deliberation. (Trading-coach P0 from the design review.)
 const DUAL_APPROVAL_TYPES = new Set(['REVENGE', 'WALLET', 'COOLDOWN']);
+const TIME_LOCKED_TYPES = new Set(['REVENGE', 'WALLET', 'COOLDOWN']);
+const TIME_LOCK_HOURS = 6;
+const TIME_LOCK_MS = TIME_LOCK_HOURS * 3600 * 1000;
+
 function violationKey(v) { return `${v.type}|${v.sig||''}|${v.time||0}`; }
 function parseApprovers(raw) {
   if (!raw) return [];
@@ -392,10 +398,30 @@ function parseApprovers(raw) {
 }
 function approversOf(key) { return parseApprovers(S.approvals[key]); }
 function requiredFor(type) { return DUAL_APPROVAL_TYPES.has(type) ? 2 : 1; }
-function isApproved(key, type) { return approversOf(key).length >= requiredFor(type); }
+function timeLockedTypeOf(type) { return TIME_LOCKED_TYPES.has(type); }
+// effective_at: when the approval actually takes effect. null = not enough approvers yet.
+function effectiveAtFor(key, type) {
+  const approvers = approversOf(key);
+  if (approvers.length < requiredFor(type)) return null;
+  const latest = Math.max(...approvers.map(a => a.at || 0));
+  return timeLockedTypeOf(type) ? latest + TIME_LOCK_MS : latest;
+}
+function isApproved(key, type) {
+  const eff = effectiveAtFor(key, type);
+  return eff != null && Date.now() >= eff;
+}
+function isPendingTimeLock(key, type) {
+  const eff = effectiveAtFor(key, type);
+  return eff != null && Date.now() < eff;
+}
 function meHasApproved(key) {
   const me = loadIdentity();
   return !!me && approversOf(key).some(a => a.by === me);
+}
+function fmtCountdown(ms) {
+  if (ms <= 0) return 'now';
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 async function fetchSharedApprovals() {
@@ -1150,14 +1176,16 @@ function renderCompliance() {
       const me = loadIdentity();
       const meDid = (v.approvers||[]).some(a => a.by === me);
       const byNames = (v.approvers||[]).map(a => a.by).join(' & ') || '—';
+      const eff = effectiveAtFor(k, v.type);
+      const pending = eff != null && Date.now() < eff;
       const subtitle = !v.approvers?.length ? '' :
+        pending ? `<span style="color:#60a5fa">⏳ approved by ${byNames} · effective in ${fmtCountdown(eff - Date.now())}</span>` :
         v.approved ? `<span style="color:#22c55e">✓ approved by ${byNames}</span>` :
         `<span style="color:#f59e0b">⚠ ${byNames} approved · awaiting ${(v.approvers[0].by==='alvin'?'Ken':'Alvin')}</span>`;
       const btnLabel = meDid ? '✓ undo my approval' : (dual && v.approvers?.length===1 ? `approve (2nd of 2)` : 'approve');
-      const btnStyle = meDid
-        ? 'background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap'
-        : 'background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap';
-      const approveBtn = `<button onclick="toggleApproval('${k}')" style="${btnStyle}">${btnLabel}</button>`;
+      const btnColor = meDid ? '#22c55e50' : '#475569';
+      const btnTextColor = meDid ? '#22c55e' : '#94a3b8';
+      const approveBtn = `<button onclick="toggleApproval('${k}')" style="background:${meDid?'none':'#1e293b'};border:1px solid ${btnColor};color:${btnTextColor};padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">${btnLabel}</button>`;
       html += `<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;display:flex;gap:10px;align-items:center;${v.approved?'opacity:.45':''}">
         <span class="tag" style="background:${colors[v.severity]}20;color:${colors[v.severity]};min-width:60px;text-align:center">${v.type}</span>
         <div style="flex:1"><div style="color:#e2e8f0">${v.detail}</div>${v.time||isTradeSig||subtitle?`<div style="color:#475569;font-size:9px;margin-top:2px">${v.time?fmtT(v.time):''}${isTradeSig?` · <a href="https://solscan.io/tx/${v.sig}" target="_blank">${short(v.sig)} ↗</a>`:''}${subtitle?` · ${subtitle}`:''}</div>`:''}</div>
@@ -1651,24 +1679,35 @@ function isInCooldown() {
 function tickCooldown() {
   if (!$('cooldownBanner')) return;
   const cd = isInCooldown();
-  if (!cd) { setBanner('cooldownBanner', false); return; }
+  const cdKey = getCooldownKey();
+  const eff = effectiveAtFor(cdKey, 'COOLDOWN');
+  const pending = eff != null && Date.now() < eff;
+  if (!cd && !pending) { setBanner('cooldownBanner', false); return; }
   setBanner('cooldownBanner', true);
   const next = getNextMonday();
   const ms = next.getTime() - Date.now();
   const days = Math.floor(ms/86400000);
   const hh = Math.floor((ms%86400000)/3600000);
   const mm = Math.floor((ms%3600000)/60000);
-  const approvers = approversOf(getCooldownKey());
+  const approvers = approversOf(cdKey);
   const me = loadIdentity();
   const meDid = approvers.some(a => a.by === me);
   const btn = $('cooldownOverrideBtn');
   if (btn) {
-    if (meDid) btn.textContent = 'undo my approval';
+    if (pending) btn.textContent = `lifting in ${fmtCountdown(eff - Date.now())}`;
+    else if (meDid) btn.textContent = 'undo my approval';
     else if (approvers.length === 1) btn.textContent = `approve (2nd of 2 · ${approvers[0].by} approved)`;
-    else btn.textContent = 'override (needs Alvin & Ken)';
+    else btn.textContent = 'override (Alvin + Ken, then 6h cooling-off)';
+    btn.disabled = pending;
+    btn.style.opacity = pending ? '0.6' : '1';
   }
-  const note = approvers.length === 1 ? ` · ${approvers[0].by} approved, awaiting ${approvers[0].by==='alvin'?'Ken':'Alvin'}` : '';
-  $('cooldownDetail').textContent = `${cd.reason}${note} · Next release ${next.toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short'})} in ${days}d ${hh}h ${mm}m`;
+  let note = '';
+  if (pending) {
+    note = ` · approved by Alvin & Ken · cooling off, lifts in ${fmtCountdown(eff - Date.now())}`;
+  } else if (approvers.length === 1) {
+    note = ` · ${approvers[0].by} approved, awaiting ${approvers[0].by==='alvin'?'Ken':'Alvin'}`;
+  }
+  $('cooldownDetail').textContent = `${cd ? cd.reason : 'override pending'}${note} · Next budget release ${next.toLocaleDateString('en-AU',{weekday:'short',day:'2-digit',month:'short'})} in ${days}d ${hh}h ${mm}m`;
 }
 setInterval(tickCooldown, 60_000);
 
