@@ -759,6 +759,29 @@ function parsePerpsTrades(rawList) {
   }).sort((a, b) => b.time - a.time);
 }
 
+// ─── Drawdown — peak-to-trough across the total-equity series ───
+// Falls back to the realised stepped series if not enough samples.
+function drawdownStats() {
+  let series = [];
+  if ((S.samples || []).length > 1) {
+    series = S.samples.map(s => ({ at: s.at / 1000, v: s.total }));
+  } else {
+    let cum = 0;
+    series.push({ at: TRACKING_START, v: 0 });
+    const closes = S.trades.filter(t => t.action !== 'Open').slice().sort((a,b) => a.time - b.time);
+    for (const c of closes) { cum += c.pnl || 0; series.push({ at: c.time, v: cum }); }
+  }
+  if (series.length < 2) return null;
+  let peak = series[0].v, maxDD = 0, maxDDAt = null, peakAt = series[0].at;
+  for (const p of series) {
+    if (p.v > peak) { peak = p.v; peakAt = p.at; }
+    const dd = peak - p.v;
+    if (dd > maxDD) { maxDD = dd; maxDDAt = p.at; }
+  }
+  const last = series[series.length - 1].v;
+  return { peak, peakAt, maxDD, maxDDAt, currentDD: peak - last, points: series.length };
+}
+
 // ─── P&L rollups (WTD / MTD / YTD / LTD), bounded by TRACKING_START ───
 function periodPnl() {
   const now = new Date();
@@ -968,12 +991,23 @@ function renderOverview() {
     else { const d = Math.floor(sinceMs/86400000); streakLabel = d + 'd'; streakUnit = 'clean'; streakColor = d >= 7 ? '#22c55e' : '#f59e0b'; }
   }
 
+  const dd = drawdownStats();
+  const ddCard = dd ? (() => {
+    const ddPct = dd.peak > 0 ? (dd.maxDD / dd.peak) * 100 : 0;
+    const c = dd.maxDD > 0 ? '#ef4444' : '#22c55e';
+    const sub = dd.maxDD > 0
+      ? (dd.currentDD > 0.5 ? `now -$${dd.currentDD.toFixed(2)} below peak` : 'recovered')
+      : 'no drawdown yet';
+    return { l:'Max DD', v: dd.maxDD > 0 ? '-$' + dd.maxDD.toFixed(2) : '$0', u: sub, c };
+  })() : null;
+
   const primaryCards = [
     {l:'SOL',v:S.sol!==null?S.sol.toFixed(4):'…',u:'balance',c:'#9945ff'},
     {l:'USDC',v:S.usdc!==null?S.usdc.toFixed(2):'…',u:'balance',c:'#2775ca'},
     ...(S.usdt > 0 ? [{l:'USDT',v:S.usdt.toFixed(2),u:'balance',c:'#26a17b'}] : []),
     {l:'Today P&L',v:pnlStr(todayPnl),u:`${todayTrades.length} trade${todayTrades.length===1?'':'s'} · y'day ${pnlStr(ydayPnl)}`,c:todayPnl>=0?'#22c55e':'#ef4444'},
     {l:'Clean Streak',v:streakLabel,u:streakUnit,c:streakColor},
+    ...(ddCard ? [ddCard] : []),
     {l:'Violations',v:alerts+warns,u:alerts?alerts+' critical':'all clear',c:alerts?'#ef4444':warns?'#f59e0b':'#22c55e'},
   ];
   const secondaryCards = [
