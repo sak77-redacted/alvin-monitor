@@ -476,17 +476,19 @@ function checkCompliance(trades) {
     }
   }
 
-  // 5. Weekly budget check
+  // 5. Weekly P&L check — realised loss for the week vs the budget.
+  // (We intentionally don't sum 'collateral committed on opens' here, because
+  // capital recycles between close→open and overcounts dramatically.)
   const weeks = {};
   trades.forEach(t => {
-    if (!weeks[t.weekKey]) weeks[t.weekKey] = { spent: 0, trades: 0 };
-    weeks[t.weekKey].spent += t.usdcIn;
-    weeks[t.weekKey].trades++;
+    if (!weeks[t.weekKey]) weeks[t.weekKey] = { pnl: 0, liqs: 0 };
+    weeks[t.weekKey].pnl += t.pnl || 0;
+    if (t.action === 'Liquidation') weeks[t.weekKey].liqs++;
   });
 
   for (const [wk, data] of Object.entries(weeks)) {
-    if (data.spent > BUDGET_WEEKLY * 1.5) {
-      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: 'budget:' + wk, detail: `Week of ${wk}: spent $${data.spent.toFixed(2)} · rule is $${BUDGET_WEEKLY} max` });
+    if (data.pnl <= -BUDGET_WEEKLY) {
+      violations.push({ type: 'BUDGET', severity: 'alert', time: 0, sig: 'budget:' + wk, detail: `Week of ${wk}: lost $${Math.abs(data.pnl).toFixed(2)}${data.liqs?` (${data.liqs} liq)`:''} · rule is $${BUDGET_WEEKLY} max loss` });
     }
   }
   
@@ -497,13 +499,17 @@ function checkCompliance(trades) {
 function aggregateWeekly(trades) {
   const weeks = {};
   trades.forEach(t => {
-    if (!weeks[t.weekKey]) weeks[t.weekKey] = { key: t.weekKey, trades: [], totalPnl: 0, wins: 0, losses: 0, volume: 0, count: 0, revenges: 0 };
+    if (!weeks[t.weekKey]) weeks[t.weekKey] = { key: t.weekKey, trades: [], totalPnl: 0, wins: 0, losses: 0, liqs: 0, volume: 0, count: 0 };
     const w = weeks[t.weekKey];
     w.trades.push(t);
-    w.totalPnl += t.pnl;
-    w.volume += t.usdcIn;
-    w.count++;
-    if (t.pnl > 0) w.wins++; else if (t.pnl < 0) w.losses++;
+    w.totalPnl += (t.pnl || 0);
+    w.volume += (t.usdcIn || 0);
+    // count + win/loss are about *closed* trades; opens have pnl=0 and would dilute the rate
+    if (t.action !== 'Open') {
+      w.count++;
+      if (t.pnl > 0) w.wins++; else if (t.pnl < 0) w.losses++;
+      if (t.action === 'Liquidation') w.liqs++;
+    }
   });
   return Object.values(weeks).sort((a,b) => b.key.localeCompare(a.key));
 }
@@ -845,11 +851,11 @@ function renderCompliance() {
 }
 
 function downloadWeeklyCsv() {
-  const headers = ['Week','Trades','Volume USD','P&L USD','Wins','Losses','Win Rate %','Over Budget'];
+  const headers = ['Week','Closes','Liquidations','Capital Deployed USD','P&L USD','Wins','Losses','Win Rate %','Over Loss Budget'];
   const rows = S.weeklyData.map(w => [
-    w.key, w.count, w.volume.toFixed(2), w.totalPnl.toFixed(2),
+    w.key, w.count, w.liqs || 0, w.volume.toFixed(2), w.totalPnl.toFixed(2),
     w.wins, w.losses, w.count ? (w.wins/w.count*100).toFixed(0) : '0',
-    w.volume > BUDGET_WEEKLY ? 'yes' : 'no',
+    w.totalPnl <= -BUDGET_WEEKLY ? 'yes' : 'no',
   ]);
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -865,19 +871,19 @@ function renderWeekly() {
 
   let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table><thead><tr>
-    <th>Week</th><th>Trades</th><th>Volume</th><th>P&L</th><th>Win Rate</th><th>Budget Status</th>
+    <th>Week</th><th>Closes</th><th>Capital</th><th>P&L</th><th>Win Rate</th><th>Loss vs Budget</th>
   </tr></thead><tbody>`;
 
   for (const w of S.weeklyData) {
     const wr = w.count > 0 ? (w.wins/w.count*100) : 0;
-    const overBudget = w.volume > BUDGET_WEEKLY;
-    html += `<tr class="${overBudget?'ext-row':''}">
+    const overLossBudget = w.totalPnl <= -BUDGET_WEEKLY;
+    html += `<tr class="${overLossBudget?'ext-row':''}">
       <td data-label="Week" style="color:#94a3b8;white-space:nowrap">${w.key}</td>
-      <td data-label="Trades">${w.count}</td>
-      <td data-label="Volume" style="font-variant-numeric:tabular-nums">$${w.volume.toFixed(2)}</td>
+      <td data-label="Closes">${w.count}${w.liqs?` <span style="color:#ef4444">(${w.liqs} liq)</span>`:''}</td>
+      <td data-label="Capital" style="font-variant-numeric:tabular-nums" title="cumulative collateral committed across opens (capital recycles between close→open)">$${w.volume.toFixed(2)}</td>
       <td data-label="P&L" class="${pnlClass(w.totalPnl)}" style="font-weight:600">${pnlStr(w.totalPnl)}</td>
       <td data-label="Win Rate" style="color:${wr>=50?'#22c55e':'#ef4444'}">${wr.toFixed(0)}%</td>
-      <td data-label="Budget">${overBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+(w.volume-BUDGET_WEEKLY).toFixed(2)+')</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
+      <td data-label="Budget">${overLossBudget?'<span style="color:#ef4444;font-weight:700">⚠ OVER ($'+Math.abs(w.totalPnl+BUDGET_WEEKLY).toFixed(2)+' past loss cap)</span>':'<span style="color:#22c55e">✓ OK</span>'}</td>
     </tr>`;
   }
   html += '</tbody></table></div></div>';
@@ -1083,8 +1089,11 @@ function overrideCooldown() { return toggleApproval(getCooldownKey()); }
 function isInCooldown() {
   if (isApproved(getCooldownKey(), 'COOLDOWN')) return null;
   const thisWeek = getWeekKey(new Date());
-  const weekSpent = S.trades.filter(t => t.weekKey === thisWeek).reduce((sum,t) => sum + (t.usdcIn||0), 0);
-  if (weekSpent >= BUDGET_WEEKLY) return { reason: `Used $${weekSpent.toFixed(2)} of $${BUDGET_WEEKLY} weekly budget` };
+  const weekTrades = S.trades.filter(t => t.weekKey === thisWeek);
+  const weekPnl = weekTrades.reduce((s, t) => s + (t.pnl || 0), 0);
+  const weekLiqs = weekTrades.filter(t => t.action === 'Liquidation').length;
+  if (weekPnl <= -BUDGET_WEEKLY) return { reason: `Lost $${Math.abs(weekPnl).toFixed(2)} this week · rule is $${BUDGET_WEEKLY} max loss` };
+  if (weekLiqs >= 3) return { reason: `${weekLiqs} liquidations this week · rule is 3 max` };
   if (S.solPrice && S.sol !== null) {
     const wallet = S.sol * S.solPrice + (S.usdc||0) + (S.usdt||0);
     if (wallet < 10) return { reason: `Wallet depleted — $${wallet.toFixed(2)}` };
