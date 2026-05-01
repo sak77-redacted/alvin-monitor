@@ -138,6 +138,26 @@
   </div>
 </div>
 
+<div id="targetModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:24px;max-width:480px;width:100%">
+    <input type="hidden" id="targetPubkey">
+    <div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px">Exit target</div>
+    <div id="targetHeader" style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:10px"></div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:18px;line-height:1.5">Commit your planned exit price *before* greed/hopium kicks in. Max loss is already capped at your collateral; this is the discipline of declaring where you're getting out.</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Exit price (USD)
+        <input type="number" id="tExitPrice" step="0.01" min="0" placeholder="e.g. 77000" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:14px;font-variant-numeric:tabular-nums">
+        <span id="tHint" style="font-size:10px;color:#64748b"></span></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Thesis (optional, 1 line)
+        <input type="text" id="tThesis" placeholder="e.g. break down to 68k bottom of trend" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"></label>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:20px;flex-wrap:wrap">
+      <button onclick="clearTarget()" style="background:transparent;border:1px solid #475569;color:#ef4444;padding:8px 14px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer">remove target</button>
+      <div style="display:flex;gap:10px"><button onclick="closeTargetModal()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">cancel</button><button onclick="saveTarget()" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">save</button></div>
+    </div>
+  </div>
+</div>
+
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
@@ -191,7 +211,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{} };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{}, targets:{} };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -317,6 +337,82 @@ async function fetchJournal() {
     const d = await r.json();
     S.journal = d.journal || {};
   } catch {}
+}
+
+async function fetchTargets() {
+  try {
+    const r = await fetch('/api/targets');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.targets = d.targets || {};
+  } catch {}
+}
+
+function openTargetModal(pubkey) {
+  const p = S.positions.find(x => x.positionPubkey === pubkey);
+  const t = S.targets[pubkey];
+  const modal = $('targetModal'); if (!modal) return;
+  $('targetPubkey').value = pubkey;
+  const market = p?.market || tokenSymbol(p?.marketMint || '') || '';
+  const side = (p?.side || '').toUpperCase();
+  const mark = numish(p?.markPrice ?? p?.currentPrice ?? p?.indexPrice);
+  const entry = numish(p?.entryPrice ?? p?.averagePrice);
+  $('targetHeader').textContent = `${side} ${market} · entry $${entry.toFixed(2)} · mark $${mark.toFixed(2)}`;
+  $('tExitPrice').value = t?.exitPrice ?? '';
+  $('tThesis').value = t?.thesis ?? '';
+  $('tHint').textContent = side === 'LONG' ? 'Long: target should be above mark.' : side === 'SHORT' ? 'Short: target should be below mark.' : '';
+  modal.style.display = 'flex';
+}
+function closeTargetModal() { const m = $('targetModal'); if (m) m.style.display = 'none'; }
+async function saveTarget() {
+  const by = loadIdentity();
+  if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
+  const pubkey = $('targetPubkey').value;
+  const exitPrice = parseFloat($('tExitPrice').value);
+  if (!isFinite(exitPrice) || exitPrice <= 0) { alert('Enter a valid exit price'); return; }
+  const p = S.positions.find(x => x.positionPubkey === pubkey);
+  const entry = {
+    positionPubkey: pubkey,
+    exitPrice,
+    thesis: $('tThesis').value,
+    side: p?.side || '',
+    market: p?.market || tokenSymbol(p?.marketMint || ''),
+    by,
+  };
+  S.targets[pubkey] = { ...entry, at: Date.now() };
+  closeTargetModal();
+  renderOverview(); renderMultisig();
+  try {
+    const r = await fetch('/api/targets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    delete S.targets[pubkey];
+    renderOverview(); renderMultisig();
+    alert('Failed to save target: ' + e.message);
+  }
+}
+async function clearTarget() {
+  const by = loadIdentity();
+  if (!by) return;
+  const pubkey = $('targetPubkey').value;
+  const prev = S.targets[pubkey];
+  delete S.targets[pubkey];
+  closeTargetModal();
+  renderOverview(); renderMultisig();
+  try {
+    await fetch('/api/targets', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ positionPubkey: pubkey, by }),
+    });
+  } catch {
+    if (prev) S.targets[pubkey] = prev;
+    renderOverview(); renderMultisig();
+  }
 }
 
 function openJournalModal(sig) {
@@ -1055,12 +1151,31 @@ function renderPositionCard(p) {
   const links = [];
   if (p.positionPubkey) links.push(`<a href="https://solscan.io/account/${p.positionPubkey}" target="_blank" style="color:#3b82f6">Solscan ↗</a>`);
   links.push(`<a href="https://jup.ag/perps-legacy/${side}/1-${(mkt||'SOL').toLowerCase()}" target="_blank" style="color:#3b82f6">Jupiter ↗</a>`);
+
+  // Exit target lockbox
+  const target = p.positionPubkey ? S.targets?.[p.positionPubkey] : null;
+  let targetRow = '';
+  if (p.positionPubkey) {
+    if (target && typeof target.exitPrice === 'number') {
+      const tgt = target.exitPrice;
+      const dist = mark > 0 ? ((tgt - mark) / mark) * 100 : 0;
+      const goodSign = side === 'long' ? dist > 0 : dist < 0;
+      const distAbs = Math.abs(dist);
+      const distCol = distAbs < 1 ? '#22c55e' : distAbs < 5 ? '#f59e0b' : '#94a3b8';
+      const arrow = goodSign ? '↑' : '↓';
+      targetRow = `<div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center"><span style="color:#60a5fa">📍 Target $${tgt.toFixed(2)}</span><span style="color:${distCol}">${arrow} ${distAbs.toFixed(2)}% from mark</span>${target.thesis?`<span style="color:#64748b;font-style:italic">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto">edit</button></div>`;
+    } else {
+      targetRow = `<div style="font-size:11px;margin-bottom:6px"><button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:1px dashed #475569;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:10px;padding:4px 10px;border-radius:4px">📍 set exit target →</button></div>`;
+    }
+  }
+
   return `<div style="border:1px solid ${sideColor}30;border-left:3px solid ${sideColor};border-radius:8px;padding:14px;margin-bottom:8px;background:#0f1923">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div><div style="font-size:14px;font-weight:700;color:${sideColor}">${side.toUpperCase()} ${mkt}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${lev.toFixed(1)}x · $${sizeUsd.toFixed(2)} size · $${collat.toFixed(2)} collateral</div></div>
       <div style="text-align:right"><div style="font-size:16px;font-weight:700;color:${pnlColor};font-variant-numeric:tabular-nums">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div><div style="font-size:9px;color:#64748b">unrealized P&L</div></div>
     </div>
     <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
+    ${targetRow}
     <div style="font-size:10px;display:flex;gap:12px">${links.join(' · ')}</div>
   </div>`;
 }
@@ -1241,6 +1356,7 @@ async function init() {
       fetchSharedApprovals(), // side-effect only, not destructured
       fetchSamples(),         // side-effect only, not destructured
       fetchJournal(),         // side-effect only, not destructured
+      fetchTargets(),         // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
@@ -1374,7 +1490,11 @@ function tickTakeProfit() {
     banner.style.background = '#f59e0b18';
     banner.style.borderColor = '#f59e0b';
   }
-  detail.textContent = triggers.map(t => `${(t.p.side||'?').toUpperCase()} ${t.p.market||tokenSymbol(t.p.marketMint)} · ${t.ratio.toFixed(2)}x · ${pnlStr(numish(t.p.pnlAfterFeesUsd ?? t.p.pnl))} on $${numish(t.p.collateralUsd).toFixed(2)} collateral`).join(' · ');
+  const summary = triggers.map(t => `${(t.p.side||'?').toUpperCase()} ${t.p.market||tokenSymbol(t.p.marketMint)} · ${t.ratio.toFixed(2)}x · ${pnlStr(numish(t.p.pnlAfterFeesUsd ?? t.p.pnl))} on $${numish(t.p.collateralUsd).toFixed(2)} collateral`).join(' · ');
+  // Recommended sweep = sum of unrealised P&L across triggering positions; encourage moving profits to the multisig vault after the close
+  const sweep = triggers.reduce((s, t) => s + numish(t.p.pnlAfterFeesUsd ?? t.p.pnl), 0);
+  const sweepLine = sweep > 0 ? ` · After close, sweep $${sweep.toFixed(2)} → multisig (${short(MS)}) to lock the gain` : '';
+  detail.innerHTML = summary + (sweepLine ? `<div style="font-size:11px;margin-top:4px;color:#60a5fa">${sweepLine}</div>` : '');
   setBanner('takeProfitBanner', true);
 
   // Beep once when tier crosses upward (2 → first time, 3 → first time at 3)
