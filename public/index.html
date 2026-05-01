@@ -1027,6 +1027,23 @@ function tradeCheck() {
     }
   }
 
+  // Today's realised loss — soft stop after a tough session
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayCloses = S.trades.filter(t => t.action !== 'Open' && t.time * 1000 >= todayStart.getTime());
+  const todayPnl = todayCloses.reduce((s, t) => s + (t.pnl || 0), 0);
+  const DAILY_LOSS_GUT_CHECK = 50;
+  if (todayPnl <= -DAILY_LOSS_GUT_CHECK) {
+    checks.push({ ok:'warn', name:'Today\'s P&L', reason:`Down $${Math.abs(todayPnl).toFixed(2)} today across ${todayCloses.length} closes · consider stopping for the day` });
+  }
+
+  // Position concentration — all open positions same side = correlated risk at 200x
+  if (open.length >= 2) {
+    const longs = open.filter(p => p.side === 'long').length;
+    const shorts = open.filter(p => p.side === 'short').length;
+    if (longs >= 2 && shorts === 0) checks.push({ ok:'warn', name:'Concentration', reason:`All ${longs} open positions are LONG · correlated risk at 200x leverage` });
+    else if (shorts >= 2 && longs === 0) checks.push({ ok:'warn', name:'Concentration', reason:`All ${shorts} open positions are SHORT · correlated risk at 200x leverage` });
+  }
+
   return checks;
 }
 
