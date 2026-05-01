@@ -51,6 +51,7 @@
   .ext-row{background:#dc262610}
   .win{color:#22c55e} .loss{color:#ef4444} .neutral{color:#64748b}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  @keyframes tpPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 0 6px rgba(245,158,11,.18)}}
   ::-webkit-scrollbar{height:6px;width:6px} ::-webkit-scrollbar-track{background:#1e293b} ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
   @media (max-width:640px){
     .hdr{padding:14px}
@@ -119,6 +120,7 @@
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
 <div id="staleBanner" class="abanner hidden" style="background:#f59e0b15;border:1px solid #f59e0b"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px">⏱ DATA STALE</div><div id="staleDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="init()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">retry now</button></div></div>
+<div id="takeProfitBanner" class="abanner hidden" style="border:2px solid #f59e0b;animation:tpPulse 1.4s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div id="takeProfitHeadline" style="font-size:16px;font-weight:700;margin-bottom:6px"></div><div id="takeProfitDetail" style="font-size:13px"></div></div><button onclick="acknowledgeTakeProfit()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'll take it</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
 <div id="bannerCycle" class="hidden" onclick="cycleBanner()" style="margin:6px 24px 0;padding:6px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;font-size:11px;color:#94a3b8;cursor:pointer;text-align:center"></div>
 
@@ -184,7 +186,7 @@ async function fetchPositions(addr) {
 const REFRESH_MS = 60_000; // auto-refresh interval
 
 // ─── Banner coordinator — show only the highest-priority active banner at a time ───
-const BANNER_PRIORITY = ['cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
+const BANNER_PRIORITY = ['takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
 let _bannerCycleIdx = 0;
 function setBanner(id, on) {
   const el = $(id); if (!el) return;
@@ -315,7 +317,7 @@ function refreshApprovalState() {
 function rerenderApprovalUI() {
   refreshApprovalState();
   if (typeof renderOverview === 'function') {
-    renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts(); tickCooldown();
+    renderOverview(); renderTrades(); renderCompliance(); renderWeekly(); renderAlerts(); tickCooldown(); tickTakeProfit();
   }
 }
 
@@ -1197,6 +1199,7 @@ async function init() {
     renderMultisig();
     renderRules();
     renderAlerts();
+    tickTakeProfit();
     tickCooldown();
     checkWalletDelta();
 
@@ -1214,6 +1217,81 @@ async function init() {
   $('pWrap').classList.add('hidden');
   $('rBtn').disabled = false;
   $('rBtn').textContent = '↻ Refresh';
+}
+
+// ─── Take-profit alert (2x / 3x of position collateral) ───
+// 2x trigger:  pnl  ≥  collateral   (100% return on margin)
+// 3x trigger:  pnl  ≥  2×collateral (200% return on margin)
+let _tpLastTier = 0;          // highest tier currently signalled (0/2/3)
+let _tpAcked = { 2: 0, 3: 0 }; // unix sec when Alvin clicked "i'll take it" — reset when ratio falls back
+function tpRatio(p) {
+  const c = numish(p.collateralUsd ?? p.collateral);
+  const pnl = numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees);
+  return c > 0 ? pnl / c : 0;
+}
+function tpTier(p) { const r = tpRatio(p); return r >= 2 ? 3 : r >= 1 ? 2 : 0; }
+function takeProfitTriggers() {
+  return (S.positions || []).map(p => ({ p, tier: tpTier(p), ratio: tpRatio(p) })).filter(x => x.tier > 0);
+}
+let _tpAudioCtx = null;
+function playTpBeep(tier) {
+  try {
+    _tpAudioCtx = _tpAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _tpAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const beepCount = tier === 3 ? 3 : 1;
+    for (let i = 0; i < beepCount; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = tier === 3 ? 880 : 660;
+      g.gain.setValueAtTime(0, ctx.currentTime + i * 0.18);
+      g.gain.linearRampToValueAtTime(0.18, ctx.currentTime + i * 0.18 + 0.02);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + i * 0.18 + 0.16);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + i * 0.18);
+      o.stop(ctx.currentTime + i * 0.18 + 0.18);
+    }
+  } catch {}
+}
+function acknowledgeTakeProfit() {
+  const triggers = takeProfitTriggers();
+  const max = triggers.reduce((m, x) => x.tier > m ? x.tier : m, 0);
+  if (max) _tpAcked[max] = Math.floor(Date.now() / 1000);
+  tickTakeProfit();
+}
+function tickTakeProfit() {
+  if (!$('takeProfitBanner')) return;
+  const triggers = takeProfitTriggers();
+  if (!triggers.length) {
+    setBanner('takeProfitBanner', false);
+    _tpLastTier = 0;
+    _tpAcked = { 2: 0, 3: 0 };
+    return;
+  }
+  const maxTier = triggers.reduce((m, x) => Math.max(m, x.tier), 0);
+  const acked = _tpAcked[maxTier] && (Date.now()/1000 - _tpAcked[maxTier] < 600); // ack mutes for 10 min
+  if (acked) { setBanner('takeProfitBanner', false); return; }
+
+  const headline = $('takeProfitHeadline'), detail = $('takeProfitDetail'), banner = $('takeProfitBanner');
+  if (maxTier === 3) {
+    headline.textContent = '🚨 TAKE PROFIT NOW · 3x · DON\'T BE A RETARD';
+    headline.style.color = '#ef4444';
+    detail.style.color = '#fca5a5';
+    banner.style.background = '#dc262620';
+    banner.style.borderColor = '#ef4444';
+  } else {
+    headline.textContent = '⚠ TAKE PROFIT · hit 2x · greed is hopium';
+    headline.style.color = '#f59e0b';
+    detail.style.color = '#fcd34d';
+    banner.style.background = '#f59e0b18';
+    banner.style.borderColor = '#f59e0b';
+  }
+  detail.textContent = triggers.map(t => `${(t.p.side||'?').toUpperCase()} ${t.p.market||tokenSymbol(t.p.marketMint)} · ${t.ratio.toFixed(2)}x · ${pnlStr(numish(t.p.pnlAfterFeesUsd ?? t.p.pnl))} on $${numish(t.p.collateralUsd).toFixed(2)} collateral`).join(' · ');
+  setBanner('takeProfitBanner', true);
+
+  // Beep once when tier crosses upward (2 → first time, 3 → first time at 3)
+  if (maxTier > _tpLastTier) playTpBeep(maxTier);
+  _tpLastTier = maxTier;
 }
 
 // ─── Cooldown ───
