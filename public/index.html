@@ -187,6 +187,7 @@
   <button class="tab" onclick="stab('compliance',this)">Compliance</button>
   <button class="tab" onclick="stab('weekly',this)">Weekly</button>
   <button class="tab" onclick="stab('multisig',this)">Multisig</button>
+  <button class="tab" onclick="stab('scorecard',this)">Scorecard</button>
   <button class="tab" onclick="stab('rules',this)">Rules</button>
 </div>
 
@@ -196,6 +197,7 @@
   <div id="tab-compliance" class="hidden"></div>
   <div id="tab-weekly" class="hidden"></div>
   <div id="tab-multisig" class="hidden"></div>
+  <div id="tab-scorecard" class="hidden"></div>
   <div id="tab-rules" class="hidden"></div>
 </div>
 
@@ -1583,6 +1585,56 @@ function renderWeekly() {
   $('tab-weekly').innerHTML = html;
 }
 
+// ─── Trial scorecard — single-screen 'is this working?' summary ───
+function renderScorecard() {
+  const closes = S.trades.filter(t => t.action !== 'Open');
+  const totalPnl = closes.reduce((s, t) => s + (t.pnl || 0), 0);
+  const wins = closes.filter(t => t.pnl > 0).length;
+  const losses = closes.filter(t => t.pnl < 0).length;
+  const liqs = closes.filter(t => t.action === 'Liquidation').length;
+  const winRate = closes.length ? wins / closes.length * 100 : 0;
+  const cap = captureStats();
+  const dd = drawdownStats();
+  const trackingDays = Math.max(1, Math.floor((Date.now() - TRACKING_START * 1000) / 86400000));
+  const trialEnd = new Date('2026-08-03T23:59:59');
+  const daysToEnd = Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400000));
+  const daysIn = Math.max(0, Math.floor((Date.now() - new Date('2026-05-05T00:00:00').getTime()) / 86400000));
+
+  const row = (label, value, status, hint) => {
+    const colors = { good: '#22c55e', warn: '#f59e0b', bad: '#ef4444', neutral: '#94a3b8' };
+    const c = colors[status] || colors.neutral;
+    const icon = status === 'good' ? '✓' : status === 'warn' ? '⚠' : status === 'bad' ? '✗' : '·';
+    return `<div style="padding:14px 16px;border-bottom:1px solid #1e293b;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px"><div><div style="font-size:13px;color:#e2e8f0;font-weight:600">${label}</div>${hint?`<div style="font-size:10px;color:#64748b;margin-top:3px">${hint}</div>`:''}</div><div style="display:flex;align-items:center;gap:12px"><div style="font-size:18px;font-weight:700;color:${c};font-variant-numeric:tabular-nums">${value}</div><span style="color:${c};font-size:14px;font-weight:700;width:18px;text-align:center">${icon}</span></div></div>`;
+  };
+
+  const trialStatus = daysIn < 0 ? 'pre-trial' : daysIn >= 90 ? 'trial complete' : `day ${daysIn + 1} of 90`;
+  const wkPnl = closes.filter(t => t.weekKey === getWeekKey(new Date())).reduce((s, t) => s + (t.pnl || 0), 0);
+  const wkLossStatus = wkPnl <= -BUDGET_WEEKLY ? 'bad' : wkPnl < 0 ? 'warn' : 'good';
+  const winStatus = winRate >= 60 ? 'good' : winRate >= 45 ? 'warn' : 'bad';
+  const capStatus = cap.avgCaptured == null ? 'neutral' : cap.avgCaptured >= 70 ? 'good' : cap.avgCaptured >= 50 ? 'warn' : 'bad';
+  const liqStatus = liqs === 0 ? 'good' : liqs <= 2 ? 'warn' : 'bad';
+  const ddPct = dd && dd.peak > 0 ? (dd.maxDD / dd.peak) * 100 : 0;
+  const ddStatus = !dd || dd.maxDD < 25 ? 'good' : dd.maxDD < 75 ? 'warn' : 'bad';
+  const hopium = hopiumStreak();
+  const hopiumStatus = hopium === 0 ? 'good' : hopium < 3 ? 'warn' : 'bad';
+
+  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:22px"><div class="pl">Trial</div><div style="font-size:clamp(20px,4vw,26px);font-weight:700;color:#e2e8f0;letter-spacing:.5px">${trialStatus}</div><div style="font-size:11px;color:#94a3b8;margin-top:6px">May 5 – Aug 3, 2026 · ${daysToEnd} day${daysToEnd===1?'':'s'} remaining · tracking active for ${trackingDays} day${trackingDays===1?'':'s'}</div></div>`;
+
+  html += `<div class="panel" style="padding:0;overflow:hidden">
+    ${row('This week\'s P&L', pnlStr(wkPnl), wkLossStatus, wkPnl <= -BUDGET_WEEKLY ? 'over loss budget — cooldown active' : 'rule: ≤ $125 weekly loss')}
+    ${row('Total realised P&L', pnlStr(totalPnl), totalPnl > 0 ? 'good' : totalPnl > -50 ? 'warn' : 'bad', `${closes.length} closes · ${wins}W / ${losses}L`)}
+    ${row('Win rate', winRate.toFixed(0) + '%', winStatus, 'aim ≥ 60%')}
+    ${row('Avg captured of peak', cap.avgCaptured == null ? '—' : cap.avgCaptured.toFixed(0) + '%', capStatus, cap.totalLeft ? `$${cap.totalLeft.toFixed(0)} total left on the table` : 'how often you took the gain you had')}
+    ${row('Liquidations', liqs, liqStatus, liqs ? 'keep <3 over 90 days' : 'no liquidations')}
+    ${row('Max drawdown', dd && dd.maxDD > 0 ? '-$' + dd.maxDD.toFixed(2) : '$0', ddStatus, dd && dd.peak > 0 ? `${ddPct.toFixed(0)}% from peak` : 'no peak yet')}
+    ${row('Hopium streak', hopium + 'x', hopiumStatus, 'consecutive closes journalled hopium')}
+    ${row('Open positions', (S.positions||[]).length, (S.positions||[]).length > 3 ? 'warn' : 'good', 'max 6 (3L/3S)')}
+  </div>`;
+
+  html += `<div class="panel" style="text-align:center;font-style:italic;color:#94a3b8;padding:20px">"The goal is not to win trades. The goal is to get bored."</div>`;
+  $('tab-scorecard').innerHTML = html;
+}
+
 function renderRules() {
   const rs = [
     {r:'Weekly budget',v:'$125 USDC released every Monday',c:'💰'},
@@ -1884,6 +1936,7 @@ async function init() {
     renderCompliance();
     renderWeekly();
     renderMultisig();
+    renderScorecard();
     renderRules();
     renderAlerts();
     applyRegimeUI();
