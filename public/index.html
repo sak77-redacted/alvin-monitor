@@ -1005,8 +1005,8 @@ async function init() {
       fetchPositions(W),
       fetchPositions(MS),
       fetchSolPrice(),
-      fetchSharedApprovals(),
       fetchPerpsTrades(W).catch(() => []),
+      fetchSharedApprovals(), // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
