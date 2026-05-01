@@ -1223,8 +1223,14 @@ function renderOverview() {
       const actLabel = t.action === 'Liquidation' ? '🔴 LIQ' : t.action.toUpperCase();
       const actColor = t.action === 'Liquidation' ? '#ef4444' : t.action === 'Open' ? '#94a3b8' : (t.pnl >= 0 ? '#22c55e' : '#ef4444');
       const pnlBit = t.action === 'Open' ? `$${t.sizeUsd.toFixed(0)} size` : pnlStr(t.pnl);
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px">
-        <div><span style="color:${sideColor};font-weight:600">${(t.side||'?').toUpperCase()}</span> <span style="color:#e2e8f0">${t.market}</span> <span style="color:${actColor};font-size:10px;margin-left:4px">${actLabel}</span> <span style="color:#475569;font-size:9px">· ${fmtT(t.time)} · ${ago(t.time)}</span></div>
+      const isClose = t.action !== 'Open';
+      const recent = isClose && (Date.now()/1000 - t.time) < 1800; // 30 min
+      const needsJournal = recent && !S.journal?.[t.sig];
+      const ringStyle = needsJournal ? 'border-left:2px solid #f59e0b;padding-left:8px;background:#f59e0b08' : '';
+      const journalBtn = needsJournal
+        ? ` <button onclick="openJournalModal('${t.sig}')" style="background:#f59e0b18;border:1px solid #f59e0b50;color:#fbbf24;font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer;font-family:inherit;margin-left:6px">📝 journal now</button>` : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;font-size:11px;${ringStyle}">
+        <div><span style="color:${sideColor};font-weight:600">${(t.side||'?').toUpperCase()}</span> <span style="color:#e2e8f0">${t.market}</span> <span style="color:${actColor};font-size:10px;margin-left:4px">${actLabel}</span> <span style="color:#475569;font-size:9px">· ${fmtT(t.time)} · ${ago(t.time)}</span>${journalBtn}</div>
         <div style="text-align:right"><span style="color:${actColor};font-weight:600">${pnlBit}</span> <a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px;margin-left:6px">${short(t.sig)} ↗</a></div>
       </div>`;
     }).join('');
@@ -1601,7 +1607,7 @@ function renderPositionCard(p) {
       <div><div style="font-size:14px;font-weight:700;color:${sideColor}">${side.toUpperCase()} ${mkt}</div><div style="font-size:10px;color:#64748b;margin-top:2px">${lev.toFixed(1)}x · $${sizeUsd.toFixed(2)} size · $${collat.toFixed(2)} collateral</div></div>
       <div style="text-align:right"><div style="font-size:16px;font-weight:700;color:${pnlColor};font-variant-numeric:tabular-nums">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</div><div style="font-size:9px;color:#64748b">unrealized P&L</div></div>
     </div>
-    <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% away</span>`:''}</div>
+    <div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px"><span>Entry $${entry.toFixed(2)}</span><span>Mark $${mark.toFixed(2)}</span>${liq>0?`<span style="color:${liqColor}">Liq $${liq.toFixed(2)} · ${liqDist.toFixed(1)}% (${side==='long'?'-':'+'}$${Math.abs(mark-liq).toFixed(2)}) away</span>`:''}</div>
     ${targetRow}
     <div style="font-size:10px;display:flex;gap:12px">${links.join(' · ')}</div>
   </div>`;
@@ -1737,7 +1743,11 @@ function renderPositionsPanel(positions, label = 'Open Positions') {
   const totalPnl = positions.reduce((s,p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
   const totalSize = positions.reduce((s,p) => s + numish(p.sizeUsd ?? p.size), 0);
   const pnlColor = totalPnl >= 0 ? '#22c55e' : '#ef4444';
-  return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">${label} · ${positions.length}</div><div style="font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums">$${totalSize.toFixed(2)} total · <span style="color:${pnlColor};font-weight:600">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)} P&L</span></div></div>${positions.map(renderPositionCard).join('')}</div>`;
+  // Stale-with-positions: data older than 2 minutes while a position is live = the
+  // P&L / liq distance below could be wrong by a meaningful amount at 200x leverage
+  const staleSec = S.lastUpdated ? Math.floor((Date.now() - S.lastUpdated) / 1000) : 0;
+  const staleWarn = staleSec > 120 ? `<div style="font-size:11px;color:#fbbf24;background:#f59e0b15;border:1px solid #f59e0b50;border-radius:4px;padding:6px 10px;margin-bottom:10px">⏱ Data ${Math.floor(staleSec/60)}m old — these numbers may be stale at 200x leverage. <button onclick="init()" style="background:none;border:none;color:#fbbf24;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:11px;padding:0;margin-left:6px">refresh now</button></div>` : '';
+  return `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px"><div class="pl" style="margin:0">${label} · ${positions.length}</div><div style="font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums">$${totalSize.toFixed(2)} total · <span style="color:${pnlColor};font-weight:600">${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)} P&L</span></div></div>${staleWarn}${positions.map(renderPositionCard).join('')}</div>`;
 }
 
 // ─── Multisig tab ───
