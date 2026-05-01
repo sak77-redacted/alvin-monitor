@@ -577,10 +577,17 @@ async function postSample() {
   if (S.solPrice == null || S.sol == null) return;
   const wallet = S.sol * S.solPrice + (S.usdc || 0) + (S.usdt || 0);
   const realised = S.trades.filter(t => t.action !== 'Open').reduce((s, t) => s + (t.pnl || 0), 0);
-  const unrealised = S.positions.reduce((s, p) => s + numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees), 0);
+  // Per-position snapshot lets us reconstruct each trade's lifetime peak unrealised
+  // (so we can compute 'captured %' and surface the Jan-5 'left on the table' pattern).
+  const positions = (S.positions || []).map(p => ({
+    pubkey: p.positionPubkey,
+    market: p.market || tokenSymbol(p.marketMint),
+    side: p.side,
+    pnl: numish(p.pnlAfterFeesUsd ?? p.pnl ?? p.pnlAfterFees),
+  }));
+  const unrealised = positions.reduce((s, p) => s + p.pnl, 0);
   const total = realised + unrealised;
-  const entry = { at: Date.now(), realised, unrealised, total, wallet };
-  // Optimistic local append so the chart shows the new point without a re-fetch.
+  const entry = { at: Date.now(), realised, unrealised, total, wallet, positions };
   S.samples.push(entry);
   try {
     await fetch('/api/samples', {
@@ -589,6 +596,37 @@ async function postSample() {
       body: JSON.stringify(entry),
     });
   } catch {}
+}
+
+// For a given Close/Liquidation trade, walk back through samples on the same
+// positionPubkey since the previous close, and find the peak unrealised P&L.
+// 'captured' = realised pnl / peak unrealised. Anything < ~70% means Alvin
+// could have taken profit earlier than he did. Returns null if there aren't
+// enough samples to be confident.
+function peakUnrealisedFor(trade) {
+  if (!trade || trade.action === 'Open' || !trade.positionPubkey) return null;
+  // Window: from the previous close/liquidation on this pubkey (or trade start) to this trade's time
+  const sorted = S.trades.slice().sort((a, b) => a.time - b.time);
+  let windowStart = TRACKING_START * 1000;
+  for (const t of sorted) {
+    if (t.positionPubkey !== trade.positionPubkey) continue;
+    if (t.time >= trade.time) break;
+    if (t.action !== 'Open') windowStart = t.time * 1000 + 1; // restart window after each prior close
+  }
+  const windowEnd = trade.time * 1000;
+  const inWindow = (S.samples || []).filter(s => {
+    const at = s.at;
+    if (at < windowStart || at > windowEnd) return false;
+    return Array.isArray(s.positions) && s.positions.some(p => p.pubkey === trade.positionPubkey);
+  });
+  if (inWindow.length < 2) return null;
+  let peak = -Infinity;
+  for (const s of inWindow) {
+    const p = s.positions.find(x => x.pubkey === trade.positionPubkey);
+    if (p && typeof p.pnl === 'number' && p.pnl > peak) peak = p.pnl;
+  }
+  if (!isFinite(peak)) return null;
+  return { peak, sampleCount: inWindow.length };
 }
 
 function refreshApprovalState() {
@@ -1036,6 +1074,16 @@ function renderOverview() {
   $('tab-overview').innerHTML = html;
 }
 
+function peakCapturedCell(t) {
+  if (t.action === 'Open') return '<span style="color:#475569">—</span>';
+  const peak = peakUnrealisedFor(t);
+  if (!peak) return '<span style="color:#475569" title="not enough samples to assess">—</span>';
+  if (peak.peak <= 0.5) return `<span style="color:#475569">peak ${pnlStr(peak.peak)}</span>`;
+  const captured = (t.pnl / peak.peak) * 100;
+  const col = captured >= 90 ? '#22c55e' : captured >= 60 ? '#f59e0b' : '#ef4444';
+  return `<span title="peak unrealised on this position before close · sampled across ${peak.sampleCount} ticks">peak <span style="color:#94a3b8">${pnlStr(peak.peak)}</span> · <span style="color:${col};font-weight:600">${captured.toFixed(0)}%</span></span>`;
+}
+
 function journalCell(t) {
   if (t.action === 'Open') return '<span style="color:#475569">—</span>';
   const j = S.journal[t.sig];
@@ -1103,7 +1151,7 @@ function renderTrades() {
 
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
-    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Fee</th><th>Flags</th><th>Journal</th><th>Sig</th>
+    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Peak / Captured</th><th>Fee</th><th>Flags</th><th>Journal</th><th>Sig</th>
   </tr></thead><tbody>`;
 
   for (const t of S.trades) {
@@ -1127,6 +1175,7 @@ function renderTrades() {
       <td data-label="Price" style="font-variant-numeric:tabular-nums">$${t.price.toFixed(2)}</td>
       <td data-label="Coll Δ" style="font-variant-numeric:tabular-nums;color:${t.collateralDelta>=0?'#22c55e':'#ef4444'}">${t.collateralDelta>=0?'+':''}${t.collateralDelta.toFixed(2)}</td>
       <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.action!=='Open'?pnlStr(t.pnl):'—'}</td>
+      <td data-label="Peak / Captured" style="font-variant-numeric:tabular-nums">${peakCapturedCell(t)}</td>
       <td data-label="Fee" style="color:#475569;font-variant-numeric:tabular-nums">$${t.fee.toFixed(2)}</td>
       <td data-label="Flags">${flags.join(' ')||'—'}</td>
       <td data-label="Journal">${journalCell(t)}</td>
