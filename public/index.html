@@ -98,6 +98,7 @@
       <div class="tmain">Alvin <span>Trading Monitor</span></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button id="muteBtn" onclick="toggleMute()" title="Toggle alert sounds" style="background:#0f1923;border:1px solid #475569;color:#94a3b8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer">🔔</button>
       <button id="focusBtn" onclick="toggleFocus()" style="background:#0f1923;border:1px solid #475569;color:#94a3b8;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer">🎯 Focus</button>
       <select id="who" onchange="saveIdentity(this.value)" style="background:#0f1923;border:1px solid #1e293b;color:#e2e8f0;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer"><option value="">? who are you</option><option value="alvin">I am Alvin</option><option value="ken">I am Ken</option></select>
       <span id="curfew" style="font-size:11px;color:#475569;padding:6px 10px;border:1px solid #1e293b;border-radius:6px;white-space:nowrap"></span>
@@ -173,6 +174,7 @@
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
 <div id="staleBanner" class="abanner hidden" style="background:#f59e0b15;border:1px solid #f59e0b"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#fbbf24;margin-bottom:4px">⏱ DATA STALE</div><div id="staleDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="init()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">retry now</button></div></div>
+<div id="newPosBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📍 NEW POSITION · SET YOUR EXIT</div><div id="newPosDetail" style="font-size:12px;color:#94a3b8"></div></div><button id="newPosBtn" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">set target</button></div></div>
 <div id="liqBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #ef4444;animation:tpPulse 1s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⚠ LIQUIDATION CLOSE — &lt;5% AWAY</div><div id="liqDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="acknowledgeLiq()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'm watching</button></div></div>
 <div id="takeProfitBanner" class="abanner hidden" style="border:2px solid #f59e0b;animation:tpPulse 1.4s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div id="takeProfitHeadline" style="font-size:16px;font-weight:700;margin-bottom:6px"></div><div id="takeProfitDetail" style="font-size:13px"></div></div><button onclick="acknowledgeTakeProfit()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'll take it</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
@@ -240,7 +242,7 @@ async function fetchPositions(addr) {
 const REFRESH_MS = 60_000; // auto-refresh interval
 
 // ─── Banner coordinator — show only the highest-priority active banner at a time ───
-const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'staleBanner', 'walletDeltaBanner'];
+const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner', 'newPosBanner', 'staleBanner', 'walletDeltaBanner'];
 let _bannerCycleIdx = 0;
 function setBanner(id, on) {
   const el = $(id); if (!el) return;
@@ -264,6 +266,37 @@ function applyBanners() {
   }
 }
 function cycleBanner() { _bannerCycleIdx++; applyBanners(); }
+
+// ─── Mute toggle (silences TP + liq beeps) ───
+function loadMute() { try { return localStorage.getItem('alvin_mute') === '1'; } catch { return false; } }
+function saveMute(v) { try { localStorage.setItem('alvin_mute', v ? '1' : '0'); } catch {} }
+function toggleMute() { saveMute(!loadMute()); applyMute(); }
+function applyMute() {
+  const on = loadMute();
+  const btn = $('muteBtn'); if (!btn) return;
+  btn.textContent = on ? '🔕' : '🔔';
+  btn.style.color = on ? '#ef4444' : '#94a3b8';
+  btn.style.borderColor = on ? '#ef444450' : '#475569';
+  btn.title = on ? 'Sounds muted (click to unmute)' : 'Sounds on (click to mute)';
+}
+
+// ─── New-position thesis prompt — when we detect a new positionPubkey, surface a one-time banner asking Alvin to set the exit target ───
+let _lastSeenPubkeys = null;
+function detectNewPositions() {
+  const banner = $('newPosBanner'); if (!banner) return;
+  const cur = new Set((S.positions || []).map(p => p.positionPubkey).filter(Boolean));
+  if (_lastSeenPubkeys === null) { _lastSeenPubkeys = cur; setBanner('newPosBanner', false); return; }
+  const fresh = [...cur].filter(pk => !_lastSeenPubkeys.has(pk) && !S.targets?.[pk]);
+  _lastSeenPubkeys = cur;
+  if (!fresh.length) { setBanner('newPosBanner', false); return; }
+  const pk = fresh[0];
+  const p = S.positions.find(x => x.positionPubkey === pk);
+  if (!p) { setBanner('newPosBanner', false); return; }
+  const mkt = p.market || tokenSymbol(p.marketMint);
+  $('newPosDetail').textContent = `${(p.side||'').toUpperCase()} ${mkt} just opened — declare your exit price now, before greed/hopium kicks in.`;
+  $('newPosBtn').onclick = () => openTargetModal(pk);
+  setBanner('newPosBanner', true);
+}
 
 // ─── Focus mode — minimal trading cockpit, kills the noise mid-trade ───
 function loadFocus() { try { return localStorage.getItem('alvin_focus') === '1'; } catch { return false; } }
@@ -1148,18 +1181,39 @@ function renderOverview() {
   } else { html += '<div style="color:#475569;font-size:12px;text-align:center;padding:16px">No trades since tracking started</div>'; }
   html += '</div>';
   
-  // Trading hour heatmap
+  // Hour-of-day rhythm — count of trades plus net P&L per hour. Tests the curfew
+  // hypothesis empirically: are 12am-6am trades actually losing money?
   if (S.trades.length > 2) {
-    const hours = Array(24).fill(0);
-    S.trades.forEach(t => hours[t.hour]++);
-    const max = Math.max(...hours, 1);
-    html += `<div class="panel"><div class="pl">Trading Hours (local time)</div><div class="vbar" style="height:50px">`;
-    for (let h=0;h<24;h++) {
-      const ht = hours[h] > 0 ? Math.max(4, (hours[h]/max)*50) : 2;
-      const danger = h >= 0 && h < 6;
-      html += `<div title="${h}:00 — ${hours[h]} trades" style="height:${ht}px;flex:1;background:${danger&&hours[h]>0?'#ef4444':'#3b82f6'};opacity:${hours[h]>0?1:0.15}"></div>`;
+    const hourCount = Array(24).fill(0);
+    const hourPnl = Array(24).fill(0);
+    for (const t of S.trades) {
+      hourCount[t.hour]++;
+      if (t.action !== 'Open') hourPnl[t.hour] += (t.pnl || 0);
     }
-    html += `</div><div style="display:flex;justify-content:space-between;font-size:9px;color:#475569;margin-top:4px"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span></div></div>`;
+    const maxCount = Math.max(...hourCount, 1);
+    const maxAbsPnl = Math.max(...hourPnl.map(Math.abs), 1);
+    let rowCount = '', rowPnl = '';
+    for (let h = 0; h < 24; h++) {
+      const cur = hourCount[h], pnl = hourPnl[h];
+      const isCurfew = h >= 0 && h < 6;
+      // Top row — trade count
+      const cHt = cur > 0 ? Math.max(4, (cur / maxCount) * 50) : 2;
+      const cBg = isCurfew && cur > 0 ? '#ef4444' : '#3b82f6';
+      rowCount += `<div title="${h}:00 — ${cur} trade${cur===1?'':'s'}${pnl?` · ${pnlStr(pnl)}`:''}" style="height:${cHt.toFixed(1)}px;flex:1;background:${cBg};opacity:${cur>0?1:0.15};border-radius:2px 2px 0 0"></div>`;
+      // Bottom row — P&L bar (above/below midline based on sign)
+      const pnlPct = Math.abs(pnl) / maxAbsPnl;
+      const pHt = pnl !== 0 ? Math.max(2, pnlPct * 22) : 1;
+      const pCol = pnl > 0 ? '#22c55e' : pnl < 0 ? '#ef4444' : '#475569';
+      const align = pnl >= 0 ? 'flex-end' : 'flex-start';
+      rowPnl += `<div title="${h}:00 — ${pnlStr(pnl)}" style="flex:1;display:flex;flex-direction:column;justify-content:${align};height:46px"><div style="height:${pHt.toFixed(1)}px;background:${pCol};opacity:${pnl===0?0.15:1};border-radius:${pnl>=0?'2px 2px 0 0':'0 0 2px 2px'}"></div></div>`;
+    }
+    html += `<div class="panel"><div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px"><div class="pl" style="margin:0">Hour of day · count + P&L (local time)</div><div style="font-size:11px;color:#94a3b8">Top: trade count · Bottom: net P&L (green up / red down)</div></div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:50px;margin-bottom:2px">${rowCount}</div>
+      <div style="height:1px;background:#475569;margin:1px 0"></div>
+      <div style="display:flex;gap:2px;height:46px">${rowPnl}</div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:#475569;margin-top:4px"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span></div>
+      <div style="font-size:10px;color:#475569;margin-top:6px">Curfew hours (12am–6am) shaded red on the count row when active. The P&L row tells you whether trading those hours actually pays off.</div>
+    </div>`;
   }
   
   $('tab-overview').innerHTML = html;
@@ -1770,6 +1824,7 @@ async function init() {
     tickTakeProfit();
     tickCooldown();
     checkWalletDelta();
+    detectNewPositions();
     if (loadFocus()) renderFocusCockpit();
 
     $('statusDot').innerHTML = '<span style="color:#22c55e">●</span> live';
@@ -1842,6 +1897,7 @@ function takeProfitTriggers() {
 }
 let _tpAudioCtx = null;
 function playTpBeep(tier) {
+  if (loadMute()) return;
   try {
     _tpAudioCtx = _tpAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
     const ctx = _tpAudioCtx;
@@ -2017,6 +2073,7 @@ setInterval(() => { if (!$('rBtn').disabled && document.visibilityState === 'vis
 
 $('who').value = loadIdentity();
 if (!loadIdentity()) { const m = $('identityModal'); if (m) m.style.display = 'flex'; }
+applyMute();
 applyFocus();
 renderRules();
 init();
