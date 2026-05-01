@@ -116,6 +116,28 @@
 
 <div id="identityModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px"><div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:28px;max-width:420px;width:100%;text-align:center"><div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:8px">Identity</div><div style="font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:10px">Who are you?</div><div style="font-size:12px;color:#94a3b8;margin-bottom:22px;line-height:1.5">Every approval is stamped with your identity in the audit log. Pick yours so the record knows who clicked what.</div><div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button onclick="pickIdentity('alvin')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Alvin</button><button onclick="pickIdentity('ken')" style="background:#1e293b;border:1px solid #475569;color:#e2e8f0;padding:14px 24px;border-radius:8px;font-family:inherit;font-size:14px;cursor:pointer;flex:1;min-width:130px">I am Ken</button></div><div style="font-size:10px;color:#475569;margin-top:18px">You can change this later in the header.</div></div></div>
 
+<div id="journalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
+    <input type="hidden" id="journalSig">
+    <div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px">Trade journal</div>
+    <div id="journalHeader" style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:14px"></div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:18px;line-height:1.5">Capture what happened so the failure mode shows up next time. Skipping a question is fine — partial &gt; nothing.</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Followed your rules?
+        <select id="jRules" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"><option value="">—</option><option value="yes">yes</option><option value="partial">partial</option><option value="no">no</option></select></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Reason for exit
+        <select id="jExit" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"><option value="">—</option><option value="hit_tp">hit take-profit target</option><option value="hit_sl">hit stop-loss target</option><option value="liquidation">liquidation</option><option value="thesis_changed">thesis changed</option><option value="froze">froze / didn't act in time</option><option value="hopium">held for more (hopium)</option><option value="manual_close">manual close, no plan</option><option value="other">other</option></select></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Distractions / external factors
+        <input type="text" id="jDistractions" placeholder="e.g. wife chatter, late at night, work meeting" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Thesis going in (1 line)
+        <input type="text" id="jThesis" placeholder="e.g. break down to 68k, corrective vs impulsive structure" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Reflection (free text)
+        <textarea id="jReflection" rows="4" placeholder="what went right / wrong, lesson for next time" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px;resize:vertical"></textarea></label>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px"><button onclick="closeJournalModal()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">cancel</button><button onclick="saveJournal()" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">save</button></div>
+  </div>
+</div>
+
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="walletDeltaBanner" class="abanner hidden" style="background:#3b82f615;border:1px solid #3b82f6"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:700;color:#60a5fa;margin-bottom:4px">📈 WALLET CHANGED SINCE YOU LAST LOOKED</div><div id="walletDeltaDetail" style="font-size:12px;color:#94a3b8"></div></div><button onclick="acknowledgeWalletDelta()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">acknowledge</button></div></div>
@@ -169,7 +191,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[] };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{} };
 
 function tokenSymbol(mint) { return TOKEN_SYMBOLS[mint] || (mint ? short(mint) : '?'); }
 const numish = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
@@ -286,6 +308,60 @@ async function fetchSamples() {
     const d = await r.json();
     S.samples = d.samples || [];
   } catch {}
+}
+
+async function fetchJournal() {
+  try {
+    const r = await fetch('/api/journal');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.journal = d.journal || {};
+  } catch {}
+}
+
+function openJournalModal(sig) {
+  const t = S.trades.find(x => x.sig === sig);
+  const j = S.journal[sig] || {};
+  const modal = $('journalModal');
+  if (!modal) return;
+  $('journalSig').value = sig;
+  $('journalHeader').textContent = t ? `${(t.side||'?').toUpperCase()} ${t.market||''} · ${t.action} · ${pnlStr(t.pnl||0)} · ${fmtT(t.time)}` : sig;
+  $('jRules').value = j.rules || '';
+  $('jExit').value = j.exit || '';
+  $('jDistractions').value = j.distractions || '';
+  $('jThesis').value = j.thesis || '';
+  $('jReflection').value = j.reflection || '';
+  modal.style.display = 'flex';
+}
+function closeJournalModal() { const m = $('journalModal'); if (m) m.style.display = 'none'; }
+async function saveJournal() {
+  const by = loadIdentity();
+  if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
+  const sig = $('journalSig').value;
+  const entry = {
+    sig, by,
+    rules: $('jRules').value,
+    exit: $('jExit').value,
+    distractions: $('jDistractions').value,
+    thesis: $('jThesis').value,
+    reflection: $('jReflection').value,
+  };
+  // optimistic
+  S.journal[sig] = { ...entry, at: Date.now() };
+  closeJournalModal();
+  renderTrades();
+  try {
+    const r = await fetch('/api/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } catch (e) {
+    delete S.journal[sig];
+    renderTrades();
+    alert('Failed to save journal: ' + e.message);
+  }
 }
 
 async function postSample() {
@@ -751,6 +827,16 @@ function renderOverview() {
   $('tab-overview').innerHTML = html;
 }
 
+function journalCell(t) {
+  if (t.action === 'Open') return '<span style="color:#475569">—</span>';
+  const j = S.journal[t.sig];
+  if (j && (j.rules || j.exit || j.reflection)) {
+    const summary = [j.exit, j.rules].filter(Boolean).join(' · ') || 'logged';
+    return `<button onclick="openJournalModal('${t.sig}')" title="${(j.reflection||'').replace(/"/g,'&quot;')}" style="background:none;border:1px solid #22c55e50;color:#22c55e;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">✓ ${summary}</button>`;
+  }
+  return `<button onclick="openJournalModal('${t.sig}')" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:3px;font-size:9px;cursor:pointer;font-family:inherit;white-space:nowrap">📝 add</button>`;
+}
+
 function downloadTradesCsv() {
   const headers = ['Time UTC','Action','OrderType','Side','Market','Size USD','Price','Collateral Δ','P&L USD','Fee USD','PositionPubkey','Signature'];
   const rows = S.trades.map(t => [
@@ -773,7 +859,7 @@ function renderTrades() {
   if (!S.trades.length) { $('tab-trades').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No Jupiter trades found</div>'; return; }
   let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadTradesCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
   html += `<div class="panel table-cards" style="padding:0;overflow:hidden"><div style="overflow-x:auto;max-height:600px"><table><thead><tr>
-    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Fee</th><th>Flags</th><th>Sig</th>
+    <th>Time</th><th>Action</th><th>Side</th><th>Market</th><th>Size USD</th><th>Price</th><th>Coll Δ</th><th>P&L</th><th>Fee</th><th>Flags</th><th>Journal</th><th>Sig</th>
   </tr></thead><tbody>`;
 
   for (const t of S.trades) {
@@ -799,6 +885,7 @@ function renderTrades() {
       <td data-label="P&L" class="${pnlClass(t.pnl)}" style="font-weight:600">${t.action!=='Open'?pnlStr(t.pnl):'—'}</td>
       <td data-label="Fee" style="color:#475569;font-variant-numeric:tabular-nums">$${t.fee.toFixed(2)}</td>
       <td data-label="Flags">${flags.join(' ')||'—'}</td>
+      <td data-label="Journal">${journalCell(t)}</td>
       <td data-label="Sig"><a href="https://solscan.io/tx/${t.sig}" target="_blank" style="font-size:9px">${short(t.sig)} ↗</a></td>
     </tr>`;
   }
@@ -1153,6 +1240,7 @@ async function init() {
       fetchPerpsTrades(W).catch(() => []),
       fetchSharedApprovals(), // side-effect only, not destructured
       fetchSamples(),         // side-effect only, not destructured
+      fetchJournal(),         // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
