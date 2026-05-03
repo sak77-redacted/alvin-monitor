@@ -176,11 +176,19 @@
     <div id="targetHeader" style="font-size:13px;color:#e2e8f0;font-weight:600;margin-bottom:10px"></div>
     <div style="font-size:11px;color:#94a3b8;margin-bottom:18px;line-height:1.5">Commit your planned exit price *before* greed/hopium kicks in. Max loss is already capped at your collateral; this is the discipline of declaring where you're getting out.</div>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Exit price (USD)
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Exit price (USD) — optional if you paste a chart
         <input type="number" id="tExitPrice" step="0.01" min="0" placeholder="e.g. 77000" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:14px;font-variant-numeric:tabular-nums">
         <span id="tHint" style="font-size:10px;color:#64748b"></span></label>
       <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Thesis (optional, 1 line)
         <input type="text" id="tThesis" placeholder="e.g. break down to 68k bottom of trend" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"></label>
+      <div style="font-size:11px;color:#94a3b8">Chart (paste a TradingView screenshot · optional)
+        <div id="tChartDrop" style="margin-top:5px;border:1px dashed #475569;border-radius:6px;padding:18px;text-align:center;color:#64748b;font-size:11px;background:#0a0e17;cursor:pointer">Click here, then paste (Cmd/Ctrl + V) your chart screenshot</div>
+        <div id="tChartPreviewWrap" style="display:none;margin-top:8px;position:relative">
+          <img id="tChartPreview" style="max-width:100%;max-height:260px;border-radius:4px;border:1px solid #1e293b;display:block">
+          <button type="button" onclick="clearChartFromModal()" style="position:absolute;top:6px;right:6px;background:#0a0e17cc;border:1px solid #475569;color:#ef4444;font-family:inherit;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">remove</button>
+          <div id="tChartSize" style="font-size:9px;color:#475569;margin-top:4px"></div>
+        </div>
+      </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:space-between;margin-top:20px;flex-wrap:wrap">
       <button onclick="clearTarget()" style="background:transparent;border:1px solid #475569;color:#ef4444;padding:8px 14px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer">remove target</button>
@@ -545,6 +553,92 @@ function applyRegimeUI() {
   const sel = $('regimeSel'); if (sel) sel.value = S.settings?.regime || 'consistent';
 }
 
+// Paste-from-clipboard chart attachment for the exit-target modal.
+// Compresses with canvas to keep base64 size manageable in KV.
+let _chartDataUrl = null;
+
+function setChartPreview(dataUrl) {
+  _chartDataUrl = dataUrl;
+  const wrap = $('tChartPreviewWrap'), drop = $('tChartDrop');
+  if (!wrap || !drop) return;
+  if (dataUrl) {
+    $('tChartPreview').src = dataUrl;
+    wrap.style.display = 'block';
+    drop.textContent = 'Chart attached. Paste again to replace.';
+    drop.style.color = '#22c55e';
+    const kb = Math.round((dataUrl.length * 0.75) / 1024); // base64 → bytes ≈ × 0.75
+    $('tChartSize').textContent = `~${kb} KB`;
+  } else {
+    wrap.style.display = 'none';
+    drop.textContent = 'Click here, then paste (Cmd/Ctrl + V) your chart screenshot';
+    drop.style.color = '#64748b';
+  }
+}
+function clearChartFromModal() { setChartPreview(null); }
+
+async function compressClipboardImage(blob, maxW = 1100, maxH = 700, quality = 0.78) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxW || height > maxH) {
+        const scale = Math.min(maxW / width, maxH / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+document.addEventListener('paste', async (e) => {
+  const modal = $('targetModal');
+  if (!modal || modal.style.display !== 'flex') return;
+  const items = e.clipboardData?.items || [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      e.preventDefault();
+      try {
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        const dataUrl = await compressClipboardImage(blob);
+        // Hard cap the resulting size; if still too big, recompress more aggressively.
+        let final = dataUrl;
+        if (final.length > 850_000) {
+          final = await compressClipboardImage(blob, 800, 500, 0.6);
+        }
+        if (final.length > 850_000) {
+          final = await compressClipboardImage(blob, 600, 380, 0.5);
+        }
+        setChartPreview(final);
+      } catch (err) {
+        alert('Could not read pasted image: ' + err.message);
+      }
+      return;
+    }
+  }
+});
+
+function viewChart(pubkey) {
+  const t = S.targets?.[pubkey];
+  if (!t?.chart) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:1500;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px';
+  overlay.onclick = () => overlay.remove();
+  const img = document.createElement('img');
+  img.src = t.chart;
+  img.style.cssText = 'max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 0 40px rgba(0,0,0,.5)';
+  overlay.appendChild(img);
+  document.body.appendChild(overlay);
+}
+
 function openTargetModal(pubkey) {
   const p = S.positions.find(x => x.positionPubkey === pubkey);
   const t = S.targets[pubkey];
@@ -558,6 +652,7 @@ function openTargetModal(pubkey) {
   $('tExitPrice').value = t?.exitPrice ?? '';
   $('tThesis').value = t?.thesis ?? '';
   $('tHint').textContent = side === 'LONG' ? 'Long: target should be above mark.' : side === 'SHORT' ? 'Short: target should be below mark.' : '';
+  setChartPreview(t?.chart || null);
   modal.style.display = 'flex';
 }
 function closeTargetModal() { const m = $('targetModal'); if (m) m.style.display = 'none'; }
@@ -565,17 +660,25 @@ async function saveTarget() {
   const by = loadIdentity();
   if (!by) { alert('Pick your identity (Alvin/Ken) at the top first.'); return; }
   const pubkey = $('targetPubkey').value;
-  const exitPrice = parseFloat($('tExitPrice').value);
-  if (!isFinite(exitPrice) || exitPrice <= 0) { alert('Enter a valid exit price'); return; }
+  const exitPriceRaw = $('tExitPrice').value.trim();
+  const exitPrice = exitPriceRaw === '' ? null : parseFloat(exitPriceRaw);
+  const hasPrice = exitPrice != null && isFinite(exitPrice) && exitPrice > 0;
+  const hasChart = !!_chartDataUrl;
+  if (!hasPrice && !hasChart) {
+    alert('Enter an exit price or paste a chart screenshot (or both).');
+    return;
+  }
   const p = S.positions.find(x => x.positionPubkey === pubkey);
   const entry = {
     positionPubkey: pubkey,
-    exitPrice,
+    exitPrice: hasPrice ? exitPrice : null,
     thesis: $('tThesis').value,
+    chart: _chartDataUrl,
     side: p?.side || '',
     market: p?.market || tokenSymbol(p?.marketMint || ''),
     by,
   };
+  const prev = S.targets[pubkey];
   S.targets[pubkey] = { ...entry, at: Date.now() };
   closeTargetModal();
   renderOverview(); renderMultisig();
@@ -587,7 +690,7 @@ async function saveTarget() {
     });
     if (!r.ok) throw new Error(await r.text());
   } catch (e) {
-    delete S.targets[pubkey];
+    if (prev) S.targets[pubkey] = prev; else delete S.targets[pubkey];
     renderOverview(); renderMultisig();
     alert('Failed to save target: ' + e.message);
   }
@@ -1680,18 +1783,22 @@ function renderPositionCard(p) {
   const target = p.positionPubkey ? S.targets?.[p.positionPubkey] : null;
   let targetRow = '';
   if (p.positionPubkey) {
-    if (target && typeof target.exitPrice === 'number') {
-      const tgt = target.exitPrice;
-      const dist = mark > 0 ? ((tgt - mark) / mark) * 100 : 0;
-      const goodSign = side === 'long' ? dist > 0 : dist < 0;
-      const distAbs = Math.abs(dist);
+    if (target && (typeof target.exitPrice === 'number' || target.chart)) {
+      const hasPrice = typeof target.exitPrice === 'number' && target.exitPrice > 0;
+      const tgt = hasPrice ? target.exitPrice : null;
+      const distAbs = hasPrice && mark > 0 ? Math.abs(((tgt - mark) / mark) * 100) : 0;
       const distCol = distAbs < 1 ? '#22c55e' : distAbs < 5 ? '#f59e0b' : '#94a3b8';
-      const arrow = goodSign ? '↑' : '↓';
-      const hit = side === 'long' ? mark >= tgt : side === 'short' ? mark <= tgt : false;
+      const arrow = hasPrice ? (side === 'long' ? (tgt > mark ? '↑' : '↓') : (tgt < mark ? '↓' : '↑')) : '';
+      const hit = hasPrice ? (side === 'long' ? mark >= tgt : side === 'short' ? mark <= tgt : false) : false;
+      const chartBit = target.chart ? `<img src="${target.chart}" onclick="viewChart('${p.positionPubkey}')" title="click to enlarge" style="height:32px;border-radius:4px;cursor:zoom-in;border:1px solid #1e293b">` : '';
+      const thesisBit = target.thesis ? `<span style="color:#64748b;font-style:italic">"${target.thesis.replace(/</g,'&lt;')}"</span>` : '';
       if (hit) {
-        targetRow = `<div style="font-size:12px;color:#22c55e;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center;font-weight:700;background:#22c55e10;border:1px solid #22c55e50;border-radius:6px;padding:6px 10px"><span>🎯 TARGET HIT — close per plan</span><span style="color:#94a3b8;font-weight:400">target $${tgt.toFixed(2)} · mark $${mark.toFixed(2)}</span>${target.thesis?`<span style="color:#64748b;font-style:italic;font-weight:400">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto;font-weight:400">edit</button></div>`;
+        targetRow = `<div style="font-size:12px;color:#22c55e;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center;font-weight:700;background:#22c55e10;border:1px solid #22c55e50;border-radius:6px;padding:6px 10px"><span>🎯 TARGET HIT — close per plan</span><span style="color:#94a3b8;font-weight:400">target $${tgt.toFixed(2)} · mark $${mark.toFixed(2)}</span>${thesisBit}${chartBit}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto;font-weight:400">edit</button></div>`;
       } else {
-        targetRow = `<div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center"><span style="color:#60a5fa">📍 Target $${tgt.toFixed(2)}</span><span style="color:${distCol}">${arrow} ${distAbs.toFixed(2)}% from mark</span>${target.thesis?`<span style="color:#64748b;font-style:italic">"${target.thesis.replace(/</g,'&lt;')}"</span>`:''}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto">edit</button></div>`;
+        const priceBit = hasPrice
+          ? `<span style="color:#60a5fa">📍 Target $${tgt.toFixed(2)}</span><span style="color:${distCol}">${arrow} ${distAbs.toFixed(2)}% from mark</span>`
+          : `<span style="color:#60a5fa">📍 Chart-based target</span>`;
+        targetRow = `<div style="font-size:11px;color:#94a3b8;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;margin-bottom:6px;align-items:center">${priceBit}${thesisBit}${chartBit}<button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-family:inherit;font-size:10px;padding:0;margin-left:auto">edit</button></div>`;
       }
     } else {
       targetRow = `<div style="font-size:11px;margin-bottom:6px"><button onclick="openTargetModal('${p.positionPubkey}')" style="background:none;border:1px dashed #475569;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:10px;padding:4px 10px;border-radius:4px">📍 set exit target →</button></div>`;

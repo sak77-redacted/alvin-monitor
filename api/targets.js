@@ -44,21 +44,28 @@ export default async function handler(req, res) {
       return;
     }
     if (req.method === 'POST') {
-      const { positionPubkey, exitPrice, thesis, by, side, market } = req.body || {};
-      if (!positionPubkey || !by || typeof exitPrice !== 'number') {
-        res.status(400).json({ error: 'positionPubkey + by + numeric exitPrice required' });
+      const { positionPubkey, exitPrice, thesis, by, side, market, chart } = req.body || {};
+      if (!positionPubkey || !by) {
+        res.status(400).json({ error: 'positionPubkey + by required' });
+        return;
+      }
+      const hasPrice = typeof exitPrice === 'number' && exitPrice > 0;
+      const hasChart = typeof chart === 'string' && chart.startsWith('data:image/') && chart.length < 900_000;
+      if (!hasPrice && !hasChart) {
+        res.status(400).json({ error: 'either a numeric exitPrice or a chart data-URL required' });
         return;
       }
       const entry = {
         positionPubkey,
-        exitPrice,
+        exitPrice: hasPrice ? exitPrice : null,
         thesis: thesis || '',
+        chart: hasChart ? chart : null,
         side: side || '',
         market: market || '',
         by, at: Date.now(),
       };
       await kvCmd(['HSET', TARGETS_KEY, positionPubkey, JSON.stringify(entry)]);
-      res.status(200).json({ ok: true, entry });
+      res.status(200).json({ ok: true, entry: { ...entry, chart: hasChart ? '[stored]' : null } });
       return;
     }
     if (req.method === 'DELETE') {
