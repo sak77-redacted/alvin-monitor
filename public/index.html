@@ -2116,7 +2116,7 @@ function tickTakeProfit() {
   const headline = $('takeProfitHeadline'), detail = $('takeProfitDetail'), banner = $('takeProfitBanner');
   const reg = currentRegime();
   if (maxTier === 3) {
-    headline.textContent = `🚨 ALVIN, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${reg.label3}`;
+    headline.textContent = `🚨 ALVIN, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${reg.label3} — It's okay. Eat first. There's more where that came.`;
     headline.style.color = '#ef4444';
     detail.style.color = '#fca5a5';
     banner.style.background = '#dc262620';
@@ -2144,7 +2144,7 @@ function tickTakeProfit() {
     const sweep = triggers.reduce((s, t) => s + numish(t.p.pnlAfterFeesUsd ?? t.p.pnl), 0);
     if (maxTier === 3) {
       notifyWA('both',
-        `🚨 Alvin, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${reg.label3}\n\n${summary}\n\nAfter close, sweep $${sweep.toFixed(0)} → multisig (${short(MS)}).`,
+        `🚨 Alvin, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${reg.label3}\n\nIt's okay. Eat first. There's more where that came.\n\n${summary}\n\nAfter close, sweep $${sweep.toFixed(0)} → multisig (${short(MS)}).`,
         `tp3:${pk}`, 3 * 3600);
     } else {
       notifyWA('alvin',

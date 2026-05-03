@@ -148,7 +148,7 @@ export default async function handler(req, res) {
       const summary = `${side} ${market} · ${ratio.toFixed(2)}x · ${pnlStr(pnl)} on $${collat.toFixed(2)} collateral`;
       if (ratio >= tier3) {
         const r = await notify('both',
-          `🚨 Alvin, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${label3}\n\n${summary}\n\nAfter close, sweep $${pnl.toFixed(0)} → multisig.`,
+          `🚨 Alvin, DON'T BE AN AWHEAD, CLOSE THE TRADE! · ${label3}\n\nIt's okay. Eat first. There's more where that came.\n\n${summary}\n\nAfter close, sweep $${pnl.toFixed(0)} → multisig.`,
           `tp3:${pk}`, 3 * 3600);
         if (!r.deduped) fired.push({ kind: 'tp3', position: pk });
       } else if (ratio >= tier2) {
