@@ -9,7 +9,9 @@ name: digest-cron
 
 on:
   schedule:
-    - cron: '0 23 * * 0'   # Sunday 23:00 UTC = Monday 09:00 AEST
+    # Sunday 22:30 UTC = Monday 08:30 AEST. Non-zero minutes avoid the top-of-
+    # hour GH Actions contention — top-of-hour slots can run 30-60 min late.
+    - cron: '30 22 * * 0'
   workflow_dispatch:
 
 jobs:

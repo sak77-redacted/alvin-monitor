@@ -7,7 +7,10 @@ name: daily-cron
 
 on:
   schedule:
-    - cron: '0 1 * * *'    # 01:00 UTC = 09:00 HKT, every day
+    # 00:30 UTC = 08:30 HKT. GH Actions cron at top-of-hour is heavily contested
+    # and can run 30-60 min late; non-zero minutes land closer to schedule. With
+    # typical jitter this lands around 8:30-9:15 HKT.
+    - cron: '30 0 * * *'
   workflow_dispatch:
 
 jobs:
