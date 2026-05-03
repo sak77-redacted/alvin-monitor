@@ -186,7 +186,10 @@
         <div id="tChartPreviewWrap" style="display:none;margin-top:8px;position:relative">
           <img id="tChartPreview" style="max-width:100%;max-height:260px;border-radius:4px;border:1px solid #1e293b;display:block">
           <button type="button" onclick="clearChartFromModal()" style="position:absolute;top:6px;right:6px;background:#0a0e17cc;border:1px solid #475569;color:#ef4444;font-family:inherit;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">remove</button>
-          <div id="tChartSize" style="font-size:9px;color:#475569;margin-top:4px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:10px;flex-wrap:wrap">
+            <div id="tChartSize" style="font-size:9px;color:#475569"></div>
+            <button type="button" id="tReadChartBtn" onclick="readChart()" style="background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;padding:5px 10px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer">🤖 Read chart → fill price</button>
+          </div>
         </div>
       </div>
     </div>
@@ -575,6 +578,40 @@ function setChartPreview(dataUrl) {
   }
 }
 function clearChartFromModal() { setChartPreview(null); }
+
+async function readChart() {
+  if (!_chartDataUrl) return;
+  const btn = $('tReadChartBtn'); const hint = $('tHint');
+  if (!btn || !hint) return;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = '🤖 reading…';
+  try {
+    const r = await fetch('/api/read-chart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl: _chartDataUrl }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    if (data.target_price != null) {
+      $('tExitPrice').value = data.target_price;
+      const conf = data.confidence != null ? Math.round(data.confidence * 100) : null;
+      const confStr = conf != null ? ` · ${conf}% confidence` : '';
+      hint.textContent = `🤖 Read $${data.target_price}${confStr} — ${data.reasoning || 'review before saving'}.`;
+      hint.style.color = (conf != null && conf >= 70) ? '#22c55e' : '#f59e0b';
+    } else {
+      hint.textContent = `🤖 No target line detected — ${data.reasoning || 'try a clearer chart or type the price manually'}.`;
+      hint.style.color = '#ef4444';
+    }
+  } catch (e) {
+    hint.textContent = '🤖 Read failed: ' + e.message;
+    hint.style.color = '#ef4444';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
 
 async function compressClipboardImage(blob, maxW = 1100, maxH = 700, quality = 0.78) {
   return new Promise((resolve, reject) => {
