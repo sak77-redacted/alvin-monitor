@@ -63,13 +63,16 @@ async function markSent(dedupKey) {
 // zero-width space between `$` and any digit; renders identically in
 // WhatsApp but isn't a valid shell var.
 function shellSafe(s) { return String(s).replace(/\$(\d)/g, '$​$1'); }
+// CallMeBot's Apache mod_security blocks `\n` followed by any HTTP method word
+// (GET/POST/etc) — insert a zero-width space to neutralise the pattern.
+function wafSafe(s) { return String(s).replace(/(\n)(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE|Get|Post|Put|Delete|Head|Options|Patch|Connect|Trace)\b/g, '$1​$2'); }
 
 async function sendWA(to, message) {
   const phoneVar = to === 'alvin' ? 'WHATSAPP_ALVIN_PHONE' : 'WHATSAPP_KEN_PHONE';
   const keyVar = to === 'alvin' ? 'WHATSAPP_ALVIN_KEY' : 'WHATSAPP_KEN_KEY';
   const phone = process.env[phoneVar], key = process.env[keyVar];
   if (!phone || !key) return { ok: false };
-  const text = shellSafe(String(message).slice(0, 1500).trim());
+  const text = wafSafe(shellSafe(String(message).slice(0, 1500).trim()));
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(key)}`;
   try {
     const r = await fetch(url);

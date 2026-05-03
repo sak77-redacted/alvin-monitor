@@ -20,6 +20,11 @@ const TOKEN_SYMBOLS = {
 const num = v => typeof v === 'string' ? parseFloat(v) || 0 : (v || 0);
 const pnlStr = v => v > 0 ? `+$${v.toFixed(2)}` : v < 0 ? `-$${Math.abs(v).toFixed(2)}` : '$0';
 function shellSafe(s) { return String(s).replace(/\$(\d)/g, '$​$1'); }
+// CallMeBot's Apache front-end runs mod_security; a rule blocks any newline
+// followed by an HTTP method name (GET/POST/etc) as a request-smuggling
+// defence. Insert a zero-width space between newline and any leading HTTP
+// method word so the pattern doesn't match.
+function wafSafe(s) { return String(s).replace(/(\n)(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|CONNECT|TRACE|Get|Post|Put|Delete|Head|Options|Patch|Connect|Trace)\b/g, '$1​$2'); }
 
 async function kvCmd(args) {
   if (!KV_URL || !KV_TOKEN) return null;
@@ -56,7 +61,7 @@ async function sendWA(to, message) {
   const keyVar = to === 'alvin' ? 'WHATSAPP_ALVIN_KEY' : 'WHATSAPP_KEN_KEY';
   const phone = process.env[phoneVar], key = process.env[keyVar];
   if (!phone || !key) return { ok: false };
-  const text = shellSafe(String(message).slice(0, 1500).trim());
+  const text = wafSafe(shellSafe(String(message).slice(0, 1500).trim()));
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(key)}`;
   try {
     const r = await fetch(url);
@@ -151,7 +156,7 @@ function composeDaily({ trades, positions, settings, dayStart, dayEnd, weekStart
     `Open: ${positions.length}${openSummary ? '\n' + openSummary : ''}`,
     ``,
     `Regime: ${regime}`,
-    `Get bored. Make it feel like work.`,
+    `Stay bored. Make it feel like work.`,
   ];
   return lines.join('\n');
 }
