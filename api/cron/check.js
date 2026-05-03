@@ -114,6 +114,15 @@ async function fetchRecentLiquidations() {
     return ((await r.json())?.dataList || []).filter(t => t.orderType === 'Liquidation');
   } catch { return []; }
 }
+async function fetchTradesLast12h() {
+  try {
+    // 12h window covers the 60-min revenge lookback even with cron jitter.
+    const cutoff = Math.max(Math.floor(Date.now() / 1000) - 12 * 3600, TRACKING_START);
+    const r = await fetch(`https://perps-api.jup.ag/v1/trades?walletAddress=${W}&createdAtAfter=${cutoff}&start=0&end=400`);
+    if (!r.ok) return [];
+    return ((await r.json())?.dataList || []).slice().sort((a, b) => a.createdTime - b.createdTime);
+  } catch { return []; }
+}
 
 export default async function handler(req, res) {
   // Auth — refuse unless the caller has the shared secret
@@ -125,8 +134,8 @@ export default async function handler(req, res) {
 
   const fired = [];
   try {
-    const [positions, liquidations, settings, targets] = await Promise.all([
-      fetchPositions(), fetchRecentLiquidations(),
+    const [positions, liquidations, recentTrades, settings, targets] = await Promise.all([
+      fetchPositions(), fetchRecentLiquidations(), fetchTradesLast12h(),
       fetchKvHash(SETTINGS_KEY), fetchKvHash(TARGETS_KEY),
     ]);
 
@@ -214,7 +223,29 @@ export default async function handler(req, res) {
       if (!r.deduped) fired.push({ kind: 'liquidated', sig: t.txHash });
     }
 
-    res.status(200).json({ ok: true, regime, fired, checked: { positions: positions.length, liquidations: liquidations.length } });
+    // 5. REVENGE — any trade event within 60 min of a prior loss ≥ $50.
+    //    Recent-trades window is sorted ascending; for each trade, look back
+    //    at preceding events for a Decrease with pnl <= -$50 inside 60 min.
+    for (let i = 0; i < recentTrades.length; i++) {
+      const t = recentTrades[i];
+      for (let j = i - 1; j >= 0; j--) {
+        const prev = recentTrades[j];
+        if (t.createdTime - prev.createdTime > 3600) break;        // out of 60-min window
+        if (prev.action !== 'Decrease') continue;
+        const prevPnl = num(prev.pnl);
+        if (prevPnl > -50) continue;                                // prior loss < $50, skip
+        const mins = Math.max(1, Math.floor((t.createdTime - prev.createdTime) / 60));
+        const market = t.positionName || TOKEN_SYMBOLS[t.mint] || '?';
+        const side = (t.side || '').toUpperCase();
+        const r = await notify('both',
+          `🔥 REVENGE TRADE · rule violation\n\n${side} ${market}\nTrade ${mins}min after a $${Math.abs(prevPnl).toFixed(2)} loss · rule is 60min cooldown after losses ≥$50\n\nAlvin opened a new trade within 60min of a heavy loss. Cool off, then re-engage.`,
+          `revenge:${t.txHash}`, 24 * 3600);
+        if (!r.deduped) fired.push({ kind: 'revenge', sig: t.txHash, mins, lossUsd: Math.abs(prevPnl) });
+        break; // only fire once per t even if multiple prior losses qualify
+      }
+    }
+
+    res.status(200).json({ ok: true, regime, fired, checked: { positions: positions.length, liquidations: liquidations.length, recentTrades: recentTrades.length } });
   } catch (e) {
     res.status(500).json({ error: e?.message || 'cron error' });
   }

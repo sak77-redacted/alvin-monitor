@@ -1130,12 +1130,13 @@ function checkCompliance(trades) {
       violations.push({ type: 'CURFEW', severity: 'info', time: t.time, sig: t.sig, detail: `Trade at ${hh}:${mm} · rule is no trading 12am–6am` });
     }
 
-    // 4. Revenge trade detection (trade within 60 min of a losing previous trade)
+    // 4. Revenge trade detection — only fires when the prior loss is ≥$50.
+    //    Below that threshold, small chip-losses don't warrant a violation.
     if (i < trades.length - 1) {
       const prev = trades[i + 1];
-      if (prev.pnl < -0.5 && (t.time - prev.time) < 3600) {
+      if (prev.pnl <= -50 && (t.time - prev.time) < 3600) {
         const mins = Math.max(1, Math.floor((t.time-prev.time)/60));
-        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${mins}min after a $${Math.abs(prev.pnl).toFixed(2)} loss · rule is 60min cooldown after losses` });
+        violations.push({ type: 'REVENGE', severity: 'alert', time: t.time, sig: t.sig, detail: `Trade ${mins}min after a $${Math.abs(prev.pnl).toFixed(2)} loss · rule is 60min cooldown after losses ≥$50` });
       }
     }
   }
@@ -2081,6 +2082,17 @@ async function init() {
     // Compliance check
     setStatus('Checking compliance…');
     S.violations = checkCompliance(S.trades);
+
+    // WhatsApp: any REVENGE violation pings both Alvin and Ken once per (revenge-trade-sig).
+    // The threshold is already enforced inside checkCompliance (≥\$50 prior loss).
+    for (const v of S.violations) {
+      if (v.type !== 'REVENGE') continue;
+      const t = S.trades.find(x => x.sig === v.sig);
+      const sideMkt = t ? `${(t.side||'').toUpperCase()} ${t.market}` : '';
+      notifyWA('both',
+        `🔥 REVENGE TRADE · rule violation\n\n${sideMkt}\n${v.detail}\n\nAlvin opened a new trade within 60min of a ≥$50 loss. Cool off, then re-engage.`,
+        `revenge:${v.sig}`, 24 * 3600);
+    }
 
     // Wallet-over-budget check (current snapshot, keyed per week so approval auto-expires Monday)
     const walletUsd = (S.sol||0) * (S.solPrice||0) + (S.usdc||0) + (S.usdt||0);
