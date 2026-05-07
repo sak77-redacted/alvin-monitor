@@ -2085,13 +2085,21 @@ async function init() {
 
     // WhatsApp: any REVENGE violation pings both Alvin and Ken once per (revenge-trade-sig).
     // The threshold is already enforced inside checkCompliance (≥\$50 prior loss).
+    // Freshness guard: don't WA-page for trades that happened more than 20 min ago.
+    // Without this, opening the dashboard a day later resurrects every old violation
+    // as a fresh notification once its 24h dedup expires. The violation still shows
+    // in the UI list — we just don't ping the phones for stale events.
+    // Dedup TTL is 30d (was 24h) since txHash is unique forever.
+    const FRESH_REVENGE_S = 20 * 60;
+    const nowS = Math.floor(Date.now() / 1000);
     for (const v of S.violations) {
       if (v.type !== 'REVENGE') continue;
       const t = S.trades.find(x => x.sig === v.sig);
+      if (!t || (nowS - t.time) > FRESH_REVENGE_S) continue;
       const sideMkt = t ? `${(t.side||'').toUpperCase()} ${t.market}` : '';
       notifyWA('both',
         `🔥 REVENGE TRADE · rule violation\n\n${sideMkt}\n${v.detail}\n\nAlvin opened a new trade within 60min of a ≥$50 loss. Cool off, then re-engage.`,
-        `revenge:${v.sig}`, 24 * 3600);
+        `revenge:${v.sig}`, 30 * 86400);
     }
 
     // Wallet-over-budget check (current snapshot, keyed per week so approval auto-expires Monday)

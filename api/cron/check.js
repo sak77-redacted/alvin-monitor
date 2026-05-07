@@ -117,10 +117,15 @@ async function fetchRecentLiquidations() {
 async function fetchTradesLast12h() {
   try {
     // 12h window covers the 60-min revenge lookback even with cron jitter.
+    // Belt-and-braces: explicit client-side filter, since past misfires
+    // suggest createdAtAfter isn't always strictly honored by the API.
     const cutoff = Math.max(Math.floor(Date.now() / 1000) - 12 * 3600, TRACKING_START);
     const r = await fetch(`https://perps-api.jup.ag/v1/trades?walletAddress=${W}&createdAtAfter=${cutoff}&start=0&end=400`);
     if (!r.ok) return [];
-    return ((await r.json())?.dataList || []).slice().sort((a, b) => a.createdTime - b.createdTime);
+    return ((await r.json())?.dataList || [])
+      .filter(t => Number(t.createdTime) >= cutoff)
+      .slice()
+      .sort((a, b) => a.createdTime - b.createdTime);
   } catch { return []; }
 }
 
@@ -226,8 +231,20 @@ export default async function handler(req, res) {
     // 5. REVENGE — any trade event within 60 min of a prior loss ≥ $50.
     //    Recent-trades window is sorted ascending; for each trade, look back
     //    at preceding events for a Decrease with pnl <= -$50 inside 60 min.
+    //
+    //    Two guardrails to keep alerts real-time, not archaeology:
+    //    (a) Freshness: only fire if the triggering trade itself happened in
+    //        the last ~20 min. Cron runs every 5 min, so anything older has
+    //        already had its chance. Without this, a stale trade pair sitting
+    //        in the lookback re-fires every time the dedup TTL rolls over.
+    //    (b) 30-day dedup TTL by txHash. The hash is unique forever; we never
+    //        want to re-fire for the same on-chain trade, no matter how many
+    //        days elapse. Mirrors the `liq:` pattern above.
+    const NOW_S = Math.floor(Date.now() / 1000);
+    const FRESH_WINDOW_S = 20 * 60;
     for (let i = 0; i < recentTrades.length; i++) {
       const t = recentTrades[i];
+      if ((NOW_S - Number(t.createdTime)) > FRESH_WINDOW_S) continue;  // stale trigger
       for (let j = i - 1; j >= 0; j--) {
         const prev = recentTrades[j];
         if (t.createdTime - prev.createdTime > 3600) break;        // out of 60-min window
@@ -239,7 +256,7 @@ export default async function handler(req, res) {
         const side = (t.side || '').toUpperCase();
         const r = await notify('both',
           `🔥 REVENGE TRADE · rule violation\n\n${side} ${market}\nTrade ${mins}min after a $${Math.abs(prevPnl).toFixed(2)} loss · rule is 60min cooldown after losses ≥$50\n\nAlvin opened a new trade within 60min of a heavy loss. Cool off, then re-engage.`,
-          `revenge:${t.txHash}`, 24 * 3600);
+          `revenge:${t.txHash}`, 30 * 86400);
         if (!r.deduped) fired.push({ kind: 'revenge', sig: t.txHash, mins, lossUsd: Math.abs(prevPnl) });
         break; // only fire once per t even if multiple prior losses qualify
       }
