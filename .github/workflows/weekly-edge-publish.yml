@@ -1,0 +1,67 @@
+name: weekly-edge-publish
+
+# Triggered when the edge-mining agent commits an updated report to
+# reports/weekly_edge_latest.md. Reads the week tag from the first-line
+# HTML comment (so the latest copy doesn't depend on filename parsing),
+# computes an HMAC-SHA256 over the JSON body using EDGE_HMAC_KEY (shared
+# between Vercel env + this repo's secrets), and POSTs to /api/edge-write
+# which performs the KV write + WhatsApp ping.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/weekly_edge_latest.md'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sign + publish
+        env:
+          EDGE_HMAC_KEY: ${{ secrets.EDGE_HMAC_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EDGE_HMAC_KEY:-}" ]; then
+            echo "EDGE_HMAC_KEY secret missing — set it in GitHub repo secrets and Vercel env"
+            exit 1
+          fi
+          HOST="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          FILE=reports/weekly_edge_latest.md
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE not found"; exit 1
+          fi
+          WEEK=$(head -1 "$FILE" | grep -oE 'week: [0-9]{4}-[0-9]{2}' | awk '{print $2}')
+          if [ -z "$WEEK" ] || [ "$WEEK" = "0000-00" ]; then
+            echo "no real week tag on line 1 (got: '$WEEK'). Skipping publish — looks like the stub."
+            exit 0
+          fi
+          # Summary = first non-empty non-heading non-comment line
+          SUMMARY=$(grep -vE '^(<!--|#|$)' "$FILE" | head -1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          MARKDOWN=$(cat "$FILE")
+
+          # Build JSON via jq so newlines, quotes, backslashes are escaped safely
+          BODY=$(jq -nc --arg w "$WEEK" --arg m "$MARKDOWN" --arg s "$SUMMARY" \
+            '{week:$w, markdown:$m, summary:$s}')
+
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex | awk '{print $2}')
+
+          echo "Publishing week $WEEK to $HOST/api/edge-write …"
+          response=$(curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: sha256=$SIG" \
+            --data "$BODY" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$HOST/api/edge-write")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-write endpoint returned $status"
+            exit 1
+          fi
