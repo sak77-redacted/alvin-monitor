@@ -111,6 +111,7 @@
   <div class="meta">
     <span>Wallet: <a href="https://solscan.io/account/6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt" target="_blank">6gYe..yqQt ↗</a></span>
     <span>Multisig: <a href="https://solscan.io/account/Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ" target="_blank">Grtr..GXSZ ↗</a></span>
+    <span>Tangem (NEAR): <a href="https://nearblocks.io/address/288a2f8e9813f0548690da56cffc84b98028305b974e270e61fffc65506e7eed" target="_blank">288a..7eed ↗</a></span>
     <span id="txCount"></span>
     <span id="updAt"></span>
   </div>
@@ -200,11 +201,36 @@
   </div>
 </div>
 
+<div id="withdrawalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:#0f1923;border:1px solid #1e293b;border-radius:12px;padding:24px;max-width:480px;width:100%">
+    <div style="font-size:11px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px">Withdrawal claim</div>
+    <div style="font-size:14px;color:#e2e8f0;font-weight:600;margin-bottom:8px">Log what Alvin said he'd do with this money</div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:18px;line-height:1.5">Records the multisig outflow + claimed destination + Tangem baseline. If the Safe doesn't grow by ≈ this amount before the deadline, the claim was a lie — banner + WhatsApp ping to both.</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Amount released (USD)
+        <input type="number" id="wAmount" step="0.01" min="0" placeholder="e.g. 1500" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:14px;font-variant-numeric:tabular-nums"></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Claimed destination asset
+        <select id="wAsset" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px">
+          <option value="NEAR">NEAR → Tangem (the Safe)</option>
+        </select>
+        <span style="font-size:10px;color:#64748b">Only Tangem-NEAR for now. Other destinations need their own on-chain observer.</span></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Verification window (hours)
+        <input type="number" id="wHours" step="1" min="1" max="168" value="48" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:14px;font-variant-numeric:tabular-nums">
+        <span style="font-size:10px;color:#64748b">Default 48h — covers a weekend if Alvin needs to wait for market open.</span></label>
+      <label style="font-size:11px;color:#94a3b8;display:flex;flex-direction:column;gap:5px">Note (optional)
+        <input type="text" id="wNote" placeholder="e.g. WhatsApp 2026-05-25, said buying NEAR" style="background:#0a0e17;border:1px solid #1e293b;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:12px"></label>
+      <div id="wBaseline" style="font-size:11px;color:#64748b;padding:8px 10px;background:#0a0e17;border:1px solid #1e293b;border-radius:4px;line-height:1.4">Baseline will be captured at the moment you save.</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px"><button onclick="closeWithdrawalModal()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">cancel</button><button onclick="saveWithdrawal()" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:8px 16px;border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer">save</button></div>
+  </div>
+</div>
+
 <div id="errBar" class="err hidden"><span id="errMsg"></span><button class="btn-sm" style="background:#dc2626" onclick="init()">Retry</button></div>
 <div id="aBanner" class="abanner hidden"><div style="font-size:14px;font-weight:700;color:#ef4444;margin-bottom:8px">🚨 RULE VIOLATIONS DETECTED</div><div id="aDetails" style="font-size:12px;color:#fca5a5"></div></div>
 <div id="liqBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #ef4444;animation:tpPulse 1s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⚠ LIQUIDATION CLOSE — &lt;5% AWAY</div><div id="liqDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="acknowledgeLiq()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'm watching</button></div></div>
 <div id="takeProfitBanner" class="abanner hidden" style="border:2px solid #f59e0b;animation:tpPulse 1.4s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div id="takeProfitHeadline" style="font-size:16px;font-weight:700;margin-bottom:6px"></div><div id="takeProfitDetail" style="font-size:13px"></div></div><button onclick="acknowledgeTakeProfit()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i'll take it</button></div></div>
 <div id="cooldownBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #dc2626"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">⏸ COOLDOWN — WAIT UNTIL MONDAY</div><div id="cooldownDetail" style="font-size:13px;color:#fca5a5"></div></div><button id="cooldownOverrideBtn" onclick="overrideCooldown()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">override (needs Alvin & Ken)</button></div></div>
+<div id="safeBanner" class="abanner hidden" style="background:#dc262625;border:2px solid #ef4444;animation:tpPulse 1.2s ease-in-out infinite"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><div><div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:6px">🔓 SAFE OPENED — NEAR balance dropped</div><div id="safeDetail" style="font-size:13px;color:#fca5a5"></div></div><button onclick="acknowledgeSafe()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">i see it</button></div></div>
 <div id="bannerCycle" class="hidden" onclick="cycleBanner()" style="margin:6px 24px 0;padding:6px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;font-size:11px;color:#94a3b8;cursor:pointer;text-align:center"></div>
 
 <div class="tabs">
@@ -228,6 +254,9 @@
 <script>
 const W = "6gYeaEULEH6f6Pu1SpcgnENUonKegjGa8f6GWwreyqQt";
 const MS = "Grtrn5eT3pPADCMxx2NMiM4bzHT44rZy6yp7AwhHGXSZ";
+// Alvin's Tangem cold wallet on NEAR — a NEAR implicit account (64-char hex).
+const NEAR_TANGEM = "288a2f8e9813f0548690da56cffc84b98028305b974e270e61fffc65506e7eed";
+const NEAR_RPC = "https://rpc.mainnet.near.org";
 const TOKEN_SYMBOLS = {
   'So11111111111111111111111111111111111111112': 'SOL',
   '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs': 'wETH',
@@ -250,7 +279,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, approvals:{}, audit:[], samples:[], journal:{}, targets:{}, settings:{} };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, near:{ balance:null, price:null }, withdrawals:{}, approvals:{}, audit:[], samples:[], journal:{}, targets:{}, settings:{} };
 
 // Regime → TP alert thresholds in multiples of collateral.
 // 'consistent' (default): tier2 at 2x money-out (= pnl >= 1×collateral), tier3 at 3x.
@@ -281,7 +310,7 @@ const REFRESH_MS = 60_000; // auto-refresh interval
 // ─── Banner coordinator — show only the highest-priority active banner at a time ───
 // Action-only banners. FYI surfaces (stale, wallet-delta, new-position) live
 // inline next to the relevant content instead of competing for top-of-page.
-const BANNER_PRIORITY = ['liqBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner'];
+const BANNER_PRIORITY = ['liqBanner', 'safeBanner', 'takeProfitBanner', 'cooldownBanner', 'errBar', 'aBanner'];
 let _bannerCycleIdx = 0;
 function setBanner(id, on) {
   const el = $(id); if (!el) return;
@@ -518,6 +547,152 @@ async function fetchSettings() {
     S.settings = d.settings || {};
   } catch {}
 }
+
+async function fetchWithdrawals() {
+  try {
+    const r = await fetch('/api/withdrawals');
+    if (!r.ok) return;
+    const d = await r.json();
+    S.withdrawals = d.withdrawals || {};
+  } catch {}
+}
+
+// ─── Withdrawal claim modal — "Alvin said he'd buy NEAR with this" ───
+function openWithdrawalModal() {
+  const who = loadIdentity();
+  if (!who) { const m = $('identityModal'); if (m) m.style.display = 'flex'; return; }
+  if (S.near.balance === null || S.near.price === null) {
+    alert("Can't capture baseline — Tangem balance / NEAR price not loaded yet. Refresh and try again.");
+    return;
+  }
+  $('wAmount').value = '';
+  $('wHours').value = '48';
+  $('wNote').value = '';
+  $('wAsset').value = 'NEAR';
+  $('wBaseline').textContent = `Baseline at save: ${S.near.balance.toFixed(4)} NEAR @ $${S.near.price.toFixed(2)} ($${(S.near.balance * S.near.price).toFixed(2)}).`;
+  $('withdrawalModal').style.display = 'flex';
+}
+function closeWithdrawalModal() { $('withdrawalModal').style.display = 'none'; }
+async function saveWithdrawal() {
+  const who = loadIdentity();
+  if (!who) { const m = $('identityModal'); if (m) m.style.display = 'flex'; return; }
+  const amountUsd = parseFloat($('wAmount').value);
+  if (!(amountUsd > 0)) { alert('Enter a USD amount.'); return; }
+  const hours = parseInt($('wHours').value, 10) || 48;
+  const note = ($('wNote').value || '').trim();
+  const body = {
+    amountUsd, hours, note,
+    claimedAsset: 'NEAR',
+    destination: 'tangem-near',
+    baselineBalance: S.near.balance,
+    baselinePrice: S.near.price,
+    by: who,
+  };
+  try {
+    const r = await fetch('/api/withdrawals', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) { alert('Failed: ' + (d.error || r.status)); return; }
+    closeWithdrawalModal();
+    await fetchWithdrawals();
+    renderMultisig();
+  } catch (e) { alert('Network error: ' + e.message); }
+}
+async function patchWithdrawal(id, status, evidence) {
+  const who = loadIdentity();
+  if (!who) { const m = $('identityModal'); if (m) m.style.display = 'flex'; return; }
+  if (!confirm(`Mark withdrawal as ${status}?`)) return;
+  try {
+    const r = await fetch('/api/withdrawals', {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, status, by: who, evidence })
+    });
+    if (!r.ok) { const d = await r.json(); alert('Failed: ' + (d.error || r.status)); return; }
+    await fetchWithdrawals();
+    renderMultisig();
+  } catch (e) { alert('Network error: ' + e.message); }
+}
+async function deleteWithdrawal(id) {
+  const who = loadIdentity();
+  if (!who) { const m = $('identityModal'); if (m) m.style.display = 'flex'; return; }
+  if (!confirm('Delete this withdrawal record? (use for input errors only)')) return;
+  try {
+    const r = await fetch('/api/withdrawals', {
+      method:'DELETE', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, by: who })
+    });
+    if (!r.ok) { const d = await r.json(); alert('Failed: ' + (d.error || r.status)); return; }
+    await fetchWithdrawals();
+    renderMultisig();
+  } catch (e) { alert('Network error: ' + e.message); }
+}
+
+// ─── Reconciliation — for each pending withdrawal, check if Tangem grew enough ───
+// Tolerance: required NEAR delta = (claimed USD / baseline price) × 0.85.
+// 15% slack covers bridge fees + price drift + execution slippage in the
+// gap between Ken approving and Alvin actually buying.
+function reconcileWithdrawals() {
+  if (S.near.balance === null) return;
+  const now = Date.now();
+  for (const id in S.withdrawals) {
+    const w = S.withdrawals[id];
+    if (w.status !== 'pending') continue;
+    const requiredDelta = (w.amountUsd / w.baselinePrice) * 0.85;
+    const actualDelta = S.near.balance - w.baselineBalance;
+    const verified = actualDelta >= requiredDelta;
+    if (verified) {
+      // Auto-resolve the moment we see enough NEAR — don't wait for the deadline.
+      patchWithdrawalSilent(id, 'verified',
+        `Tangem +${actualDelta.toFixed(4)} NEAR (need ≥ ${requiredDelta.toFixed(4)}). Auto-verified at ${new Date(now).toISOString()}.`);
+      continue;
+    }
+    if (now >= w.deadlineAt) {
+      patchWithdrawalSilent(id, 'violated',
+        `Tangem +${actualDelta.toFixed(4)} NEAR after ${((now - w.approvedAt)/3600000).toFixed(1)}h; need ≥ ${requiredDelta.toFixed(4)}. Claim was false.`);
+      notifyWA('both',
+        `🚨 WITHDRAWAL CLAIM FAILED · $${w.amountUsd.toFixed(0)} released "to buy ${w.claimedAsset}"\n\nTangem only grew ${actualDelta.toFixed(4)} NEAR (need ≥ ${requiredDelta.toFixed(4)}).\n\nThe Safe never received the funds — they were used for something else.`,
+        `withdrawal-violated:${id}`, 30 * 86400);
+    }
+  }
+}
+async function patchWithdrawalSilent(id, status, evidence) {
+  try {
+    await fetch('/api/withdrawals', {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id, status, by: 'system', evidence })
+    });
+    // Reflect locally so the next render shows it without re-fetching.
+    if (S.withdrawals[id]) {
+      S.withdrawals[id].status = status;
+      S.withdrawals[id].resolvedAt = Date.now();
+      S.withdrawals[id].evidence = evidence;
+    }
+  } catch {}
+}
+
+// ─── Safe-outflow detector — NEAR balance drop since last refresh ───
+// localStorage keeps the last-seen balance so cross-refresh deltas survive
+// page reloads. Threshold = 0.05 NEAR (covers storage rent fluctuation and
+// rounding without missing real outflows of any meaningful size).
+function tickSafeOutflow() {
+  if (S.near.balance === null) { setBanner('safeBanner', false); return; }
+  const cur = S.near.balance;
+  let prev = null;
+  try { const raw = localStorage.getItem('alvin_near_last'); if (raw) prev = parseFloat(raw); } catch {}
+  const drop = prev !== null && (prev - cur) > 0.05;
+  if (drop) {
+    const usdDrop = (prev - cur) * (S.near.price || 0);
+    const dedup = `safe-outflow:${prev.toFixed(4)}->${cur.toFixed(4)}`;
+    $('safeDetail').innerHTML = `Was ${prev.toFixed(4)} NEAR · now ${cur.toFixed(4)} NEAR · −${(prev - cur).toFixed(4)} NEAR (≈ $${usdDrop.toFixed(2)}). Find out where it went.`;
+    setBanner('safeBanner', true);
+    notifyWA('both',
+      `🔓 SAFE OPENED · NEAR balance dropped\n\nTangem went ${prev.toFixed(4)} → ${cur.toFixed(4)} NEAR (−$${usdDrop.toFixed(2)}).\n\nWhatever the reason, the Safe is no longer protecting these funds. Confirm where they went.`,
+      dedup, 6 * 3600);
+  } else {
+    setBanner('safeBanner', false);
+  }
+  try { localStorage.setItem('alvin_near_last', String(cur)); } catch {}
+}
+function acknowledgeSafe() { setBanner('safeBanner', false); }
 
 // ─── WhatsApp push (CallMeBot via /api/notify) ───
 async function notifyWA(to, message, dedupKey, dedupTtlSec) {
@@ -944,6 +1119,29 @@ async function fetchSolPrice() {
     const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
     const d = await r.json();
     return d?.solana?.usd ?? null;
+  } catch { return null; }
+}
+
+// ─── NEAR balance & price (Tangem cold wallet) ───
+// view_account returns the total balance as yoctoNEAR (1 NEAR = 1e24 yocto).
+async function fetchNearBalance(addr) {
+  try {
+    const r = await fetch(NEAR_RPC, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({jsonrpc:'2.0', id:'x', method:'query',
+        params:{request_type:'view_account', finality:'final', account_id:addr}})
+    });
+    const d = await r.json();
+    const yocto = d?.result?.amount;
+    if (!yocto) return null;
+    return parseFloat(yocto) / 1e24;
+  } catch { return null; }
+}
+async function fetchNearPrice() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=near&vs_currencies=usd');
+    const d = await r.json();
+    return d?.near?.usd ?? null;
   } catch { return null; }
 }
 
@@ -1996,20 +2194,113 @@ function renderMultisig() {
   const sol = S.ms.sol, usdc = S.ms.usdc, usdt = S.ms.usdt;
   const haveBal = sol !== null;
   const solValue = (sol||0) * (S.solPrice||0);
-  const totalUsd = solValue + (usdc||0) + (usdt||0);
+  const msUsd = solValue + (usdc||0) + (usdt||0);
   const usdtPart = usdt > 0 ? ` + $${usdt.toFixed(2)} USDT` : '';
   const breakdown = S.solPrice
     ? `${(sol||0).toFixed(4)} SOL ($${solValue.toFixed(2)}) + $${(usdc||0).toFixed(2)} USDC${usdtPart} · SOL @ $${S.solPrice.toFixed(2)}`
     : `${(sol||0).toFixed(4)} SOL + $${(usdc||0).toFixed(2)} USDC${usdtPart} · SOL price unavailable`;
-  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Multisig Wallet Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveBal?'$'+totalUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown} · <a href="https://solscan.io/account/${MS}" target="_blank">${short(MS)} ↗</a></div></div>`;
+
+  // Alvin's Tangem (NEAR) — cold-wallet position. Required so we can verify that
+  // funds Ken releases "to buy NEAR" actually end up in NEAR, not bled into trades.
+  const nearBal = S.near.balance, nearPrice = S.near.price;
+  const haveNear = nearBal !== null;
+  const nearUsd = (nearBal||0) * (nearPrice||0);
+  const tangemBreakdown = nearPrice
+    ? `${(nearBal||0).toFixed(4)} NEAR ($${nearUsd.toFixed(2)}) · NEAR @ $${nearPrice.toFixed(2)}`
+    : `${(nearBal||0).toFixed(4)} NEAR · NEAR price unavailable`;
+
+  const combinedUsd = msUsd + nearUsd;
+  const haveCombined = haveBal || haveNear;
+
+  let html = `<div class="panel" style="background:linear-gradient(135deg,#0f1923,#1a1f35);padding:20px"><div class="pl">Combined Vault Value</div><div style="font-size:clamp(22px,6vw,32px);font-weight:700;color:#e2e8f0;font-variant-numeric:tabular-nums;letter-spacing:.5px">${haveCombined?'$'+combinedUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">Multisig $${msUsd.toFixed(2)} + Tangem $${nearUsd.toFixed(2)}</div></div>`;
+
+  html += `<div class="panel"><div class="pl">Multisig (Solana)</div><div style="font-size:20px;font-weight:600;color:#e2e8f0;font-variant-numeric:tabular-nums">${haveBal?'$'+msUsd.toFixed(2):'…'}</div><div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${breakdown} · <a href="https://solscan.io/account/${MS}" target="_blank">${short(MS)} ↗</a></div></div>`;
+
+  // The Safe panel — Alvin's own framing from WhatsApp 2026-05-25 ("moving the
+  // near to my Tangem first · can't have the quarters in your hands"). This is
+  // the only Alvin-controlled balance that resists his trading impulse, so it
+  // gets visual weight and an outflow alarm wired in `tickSafeOutflow()`.
+  html += `<div class="panel" style="border:1px solid #00ec9750;background:linear-gradient(135deg,#0a1a14,#0f1923)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:11px;color:#00ec97;letter-spacing:3px;text-transform:uppercase;font-weight:600">🔒 The Safe · NEAR cold wallet</div>
+        <div style="font-size:10px;color:#64748b;margin-top:4px;font-style:italic">"can't have the quarters in your hands"</div>
+      </div>
+      <button onclick="openWithdrawalModal()" style="background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;padding:6px 12px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;white-space:nowrap">+ Log withdrawal claim</button>
+    </div>
+    <div style="font-size:clamp(20px,5vw,28px);font-weight:700;color:#00ec97;font-variant-numeric:tabular-nums;letter-spacing:.5px;margin-top:8px">${haveNear?'$'+nearUsd.toFixed(2):'…'}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.4">${tangemBreakdown} · <a href="https://nearblocks.io/address/${NEAR_TANGEM}" target="_blank">${short(NEAR_TANGEM)} ↗</a></div>
+  </div>`;
+
+  html += renderWithdrawalsPanel();
   html += renderPositionsPanel(S.ms.positions, 'Multisig Open Positions');
   const card = (label, color, val, unit) => `<div class="card" style="border:1px solid ${color}30"><div class="cs" style="background:${color}"></div><div class="cl">${label}</div><div class="cv" style="color:${color}">${val}</div><div class="cu">${unit}</div></div>`;
   let cardsHtml = card('SOL', '#9945ff', sol!==null?sol.toFixed(4):'…', 'balance');
   cardsHtml += card('USDC', '#2775ca', usdc!==null?usdc.toFixed(2):'…', 'balance');
   if (usdt > 0) cardsHtml += card('USDT', '#26a17b', usdt.toFixed(2), 'balance');
+  cardsHtml += card('NEAR', '#00ec97', nearBal!==null?nearBal.toFixed(4):'…', 'balance');
   html += `<div class="cards">${cardsHtml}</div>`;
   if (!S.ms.positions?.length) html += '<div class="panel" style="text-align:center;color:#475569;padding:20px;font-size:12px">No open positions</div>';
   $('tab-multisig').innerHTML = html;
+}
+
+// ─── Withdrawal claims panel (inside the Multisig tab, under The Safe) ───
+function renderWithdrawalsPanel() {
+  const items = Object.values(S.withdrawals || {});
+  if (!items.length) return '';
+  items.sort((a,b) => (b.approvedAt||0) - (a.approvedAt||0));
+  const fmtAt = ms => new Date(ms).toLocaleString();
+  const statusBadge = w => {
+    if (w.status === 'verified') return `<span style="background:#22c55e25;color:#22c55e;border:1px solid #22c55e50;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;letter-spacing:1px">VERIFIED</span>`;
+    if (w.status === 'violated') return `<span style="background:#ef444425;color:#ef4444;border:1px solid #ef444450;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;letter-spacing:1px">VIOLATED</span>`;
+    if (w.status === 'cancelled') return `<span style="background:#47556925;color:#94a3b8;border:1px solid #47556950;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;letter-spacing:1px">CANCELLED</span>`;
+    const remainingMs = w.deadlineAt - Date.now();
+    const overdue = remainingMs <= 0;
+    const color = overdue ? '#ef4444' : '#f59e0b';
+    const label = overdue ? 'OVERDUE' : 'PENDING';
+    return `<span style="background:${color}25;color:${color};border:1px solid ${color}50;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;letter-spacing:1px">${label}</span>`;
+  };
+  const row = w => {
+    const reqDelta = (w.amountUsd / w.baselinePrice) * 0.85;
+    const actualDelta = (S.near.balance !== null) ? (S.near.balance - w.baselineBalance) : null;
+    const deltaStr = actualDelta !== null
+      ? `Tangem ${actualDelta >= 0 ? '+' : ''}${actualDelta.toFixed(4)} NEAR (need ≥ ${reqDelta.toFixed(4)})`
+      : `need ≥ ${reqDelta.toFixed(4)} NEAR`;
+    const remainingMs = w.deadlineAt - Date.now();
+    const remH = Math.floor(Math.abs(remainingMs) / 3600000);
+    const remStr = w.status === 'pending'
+      ? (remainingMs > 0 ? `${remH}h left` : `${remH}h overdue`)
+      : `resolved ${w.resolvedAt ? fmtAt(w.resolvedAt) : ''}`;
+    const actions = w.status === 'pending'
+      ? `<button onclick="patchWithdrawal('${w.id}','verified')" style="background:transparent;border:1px solid #22c55e;color:#22c55e;padding:3px 8px;border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer">mark verified</button>
+         <button onclick="patchWithdrawal('${w.id}','violated')" style="background:transparent;border:1px solid #ef4444;color:#ef4444;padding:3px 8px;border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer">mark violated</button>
+         <button onclick="patchWithdrawal('${w.id}','cancelled')" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:3px 8px;border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer">cancel</button>`
+      : `<button onclick="deleteWithdrawal('${w.id}')" style="background:transparent;border:1px solid #475569;color:#64748b;padding:3px 8px;border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer">delete</button>`;
+    const evidence = w.evidence ? `<div style="font-size:10px;color:#64748b;margin-top:4px;font-style:italic">${w.evidence}</div>` : '';
+    const note = w.note ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${w.note}</div>` : '';
+    return `<div style="border-top:1px solid #1e293b;padding:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:13px;color:#e2e8f0;font-weight:600;font-variant-numeric:tabular-nums">$${w.amountUsd.toFixed(2)} → ${w.claimedAsset} (${w.destination})</div>
+        ${statusBadge(w)}
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px;font-variant-numeric:tabular-nums">${deltaStr} · ${remStr}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:2px">approved ${fmtAt(w.approvedAt)} by ${w.by} · baseline ${w.baselineBalance.toFixed(4)} NEAR @ $${w.baselinePrice.toFixed(2)}</div>
+      ${note}
+      ${evidence}
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${actions}</div>
+    </div>`;
+  };
+  const pending = items.filter(w => w.status === 'pending').length;
+  const violated = items.filter(w => w.status === 'violated').length;
+  const subtitle = `${pending} pending · ${violated} violated · ${items.length} total`;
+  return `<div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+      <div class="pl" style="margin:0">Withdrawal claims · lie detector</div>
+      <div style="font-size:11px;color:#94a3b8">${subtitle}</div>
+    </div>
+    <div style="font-size:11px;color:#64748b;line-height:1.5;margin-bottom:4px">Each released-funds claim records the Safe baseline + a deadline. If the Safe doesn't grow by ≈ the claimed amount before the deadline, the claim is marked violated and both phones get pinged.</div>
+    ${items.map(row).join('')}
+  </div>`;
 }
 
 function renderAlerts() {
@@ -2036,7 +2327,7 @@ async function init() {
     // Balances + positions for trader and multisig + shared approvals, in parallel
     setStatus('Fetching balances & positions…');
     const tokenUiAmount = tok => tok?.value?.[0]?.account?.data?.parsed?.info?.tokenAmount?.uiAmount ?? 0;
-    const [tBal, tUsdc, tUsdt, msBal, msUsdc, msUsdt, traderPos, msPos, solPrice, rawPerpsTrades] = await Promise.all([
+    const [tBal, tUsdc, tUsdt, msBal, msUsdc, msUsdt, traderPos, msPos, solPrice, nearBal, nearPrice, rawPerpsTrades] = await Promise.all([
       rpc("getBalance", [W]),
       rpc("getTokenAccountsByOwner", [W,  {mint:USDC_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
       rpc("getTokenAccountsByOwner", [W,  {mint:USDT_MINT}, {encoding:"jsonParsed"}]).catch(() => null),
@@ -2046,12 +2337,15 @@ async function init() {
       fetchPositions(W),
       fetchPositions(MS),
       fetchSolPrice(),
+      fetchNearBalance(NEAR_TANGEM),
+      fetchNearPrice(),
       fetchPerpsTrades(W).catch(() => []),
       fetchSharedApprovals(), // side-effect only, not destructured
       fetchSamples(),         // side-effect only, not destructured
       fetchJournal(),         // side-effect only, not destructured
       fetchTargets(),         // side-effect only, not destructured
       fetchSettings(),        // side-effect only, not destructured
+      fetchWithdrawals(),     // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);
@@ -2062,6 +2356,8 @@ async function init() {
     S.positions = traderPos;
     S.ms.positions = msPos;
     S.solPrice = solPrice;
+    S.near.balance = nearBal;
+    S.near.price = nearPrice;
     $('pBar').style.width = '85%';
     $('txCount').textContent = rawPerpsTrades.length + ' trades loaded';
 
@@ -2124,6 +2420,7 @@ async function init() {
     renderTrades();
     renderCompliance();
     renderWeekly();
+    reconcileWithdrawals();
     renderMultisig();
     renderAlerts();
     applyRegimeUI();
@@ -2131,6 +2428,7 @@ async function init() {
     tickTakeProfit();
     tickTargetHit();
     tickCooldown();
+    tickSafeOutflow();
     checkWalletDelta();
     if (loadFocus()) renderFocusCockpit();
 
