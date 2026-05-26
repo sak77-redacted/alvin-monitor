@@ -1929,8 +1929,93 @@ function downloadWeeklyCsv() {
   URL.revokeObjectURL(url);
 }
 
+// ─── Weekly Edge panel ───
+// Tiny markdown renderer — headings, lists, bold/italic, inline code, fenced
+// code, paragraphs. Enough for the agent's reports; avoids a CDN dependency.
+function mdToHtml(md) {
+  if (!md) return '';
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = md.replace(/\r\n/g,'\n').split('\n');
+  let out = '', inCode = false, inUl = false, inOl = false, codeLang = '';
+  const closeLists = () => {
+    if (inUl) { out += '</ul>'; inUl = false; }
+    if (inOl) { out += '</ol>'; inOl = false; }
+  };
+  const inline = s => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$|[.,;:!?])/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:#0a0e17;padding:1px 5px;border-radius:3px;color:#e2e8f0">$1</code>');
+  for (const raw of lines) {
+    if (raw.startsWith('<!--')) continue;
+    if (raw.startsWith('```')) {
+      closeLists();
+      if (!inCode) { inCode = true; codeLang = raw.slice(3).trim(); out += '<pre style="background:#0a0e17;border:1px solid #1e293b;border-radius:6px;padding:10px;overflow-x:auto;font-size:11px;color:#cbd5e1;line-height:1.45"><code>'; }
+      else { inCode = false; out += '</code></pre>'; }
+      continue;
+    }
+    if (inCode) { out += esc(raw) + '\n'; continue; }
+    if (!raw.trim()) { closeLists(); continue; }
+    let m;
+    if ((m = raw.match(/^#{1,6}\s+(.*)$/))) {
+      closeLists();
+      const lvl = raw.match(/^#+/)[0].length;
+      const sizes = { 1:'18px', 2:'15px', 3:'13px', 4:'12px', 5:'11px', 6:'11px' };
+      out += `<h${lvl} style="font-size:${sizes[lvl]};color:#e2e8f0;margin:14px 0 6px;font-weight:600">${inline(m[1])}</h${lvl}>`;
+      continue;
+    }
+    if ((m = raw.match(/^\s*[-*]\s+(.*)$/))) {
+      if (!inUl) { closeLists(); out += '<ul style="margin:4px 0 8px 18px;padding:0;color:#cbd5e1;font-size:12px;line-height:1.55">'; inUl = true; }
+      out += `<li>${inline(m[1])}</li>`;
+      continue;
+    }
+    if ((m = raw.match(/^\s*\d+\.\s+(.*)$/))) {
+      if (!inOl) { closeLists(); out += '<ol style="margin:4px 0 8px 22px;padding:0;color:#cbd5e1;font-size:12px;line-height:1.55">'; inOl = true; }
+      out += `<li>${inline(m[1])}</li>`;
+      continue;
+    }
+    closeLists();
+    out += `<p style="margin:6px 0;color:#cbd5e1;font-size:12px;line-height:1.55">${inline(raw)}</p>`;
+  }
+  closeLists();
+  if (inCode) out += '</code></pre>';
+  return out;
+}
+
+function renderWeeklyEdgePanel() {
+  const e = S.weeklyEdge;
+  if (e === undefined) {
+    return `<div class="panel" id="weeklyEdgePanel" style="margin-bottom:14px"><div class="pl">📈 Weekly Edge Report</div><div style="color:#475569;font-size:12px;padding:6px 0">Loading…</div></div>`;
+  }
+  if (e === null || e.error) {
+    return `<div class="panel" id="weeklyEdgePanel" style="margin-bottom:14px"><div class="pl">📈 Weekly Edge Report</div><div style="color:#64748b;font-size:12px;padding:6px 0">No report yet. The first one lands the Sunday after <code style="background:#0a0e17;padding:1px 5px;border-radius:3px">EDGE_HMAC_KEY</code> is configured.</div></div>`;
+  }
+  const ts = e.generated_at ? new Date(e.generated_at).toLocaleString('en-AU', { timeZone: 'Asia/Hong_Kong', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + ' HKT' : '';
+  return `<div class="panel" id="weeklyEdgePanel" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+      <div class="pl">📈 Weekly Edge Report · ${e.week || ''}</div>
+      <div style="font-size:10px;color:#64748b">${ts ? 'generated ' + ts : ''}</div>
+    </div>
+    <div style="margin-top:8px">${mdToHtml(e.markdown || '')}</div>
+  </div>`;
+}
+
+async function fetchWeeklyEdge() {
+  try {
+    const r = await fetch('/api/weekly-edge?week=latest');
+    if (!r.ok) { S.weeklyEdge = null; renderWeekly(); return; }
+    S.weeklyEdge = await r.json();
+  } catch { S.weeklyEdge = null; }
+  renderWeekly();
+}
+
 function renderWeekly() {
-  if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
+  const edgeHtml = renderWeeklyEdgePanel();
+  if (S.weeklyEdge === undefined) {
+    // First call — kick off the fetch in the background; the callback will
+    // re-render once the response is in.
+    fetchWeeklyEdge();
+  }
+  if (!S.weeklyData.length) { $('tab-weekly').innerHTML = edgeHtml + '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
   // P&L periods — MTD / YTD / LTD live here; WTD stays on Overview as the budget unit
   const pp = periodPnl();
@@ -1939,7 +2024,7 @@ function renderWeekly() {
     const liqBit = d.liqs ? ` · ${d.liqs} liq` : '';
     return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
   };
-  let html = `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  let html = edgeHtml + `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
   html += renderEquityCurve();
   html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;

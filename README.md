@@ -56,3 +56,41 @@ The dashboard tries these Solana RPC endpoints in order:
 4. Solana mainnet (`api.mainnet-beta.solana.com`)
 
 When deployed on Vercel with a proper HTTPS origin, the public RPCs should work fine without needing a Helius key.
+
+## Weekly Edge Mining
+
+A long-running routine mines pattern edges from the last 7 days of realised trades, journals, and rule violations, then publishes a markdown report to the Weekly tab (📈 panel) and pings WhatsApp.
+
+### Sunday flow
+
+1. **11:55 UTC** — `.github/workflows/edge-prep-cron.yml` curls `/api/cron/edge-prep` (Bearer `CRON_SECRET`). The endpoint aggregates trades/journal/samples/violations/regime-history/hour-of-day buckets and writes to KV under `edge_prep:YYYY-WW` (60d TTL) and `edge_prep:current`.
+2. **12:00 UTC** — the edge-mining agent runs, reads `/api/edge-prep?week=current`, computes bucket-significance, writes `reports/weekly_edge_YYYY-WW.md` **and** an identical `reports/weekly_edge_latest.md`, and pushes to `main`.
+3. **on push** — `.github/workflows/weekly-edge-publish.yml` fires on changes to `reports/weekly_edge_latest.md`. It reads the `<!-- week: YYYY-WW -->` comment on line 1, builds a JSON body, signs it with HMAC-SHA256(EDGE_HMAC_KEY), and POSTs to `/api/edge-write`. That endpoint verifies the signature, writes `weekly_edge:YYYY-WW` and bumps `weekly_edge:latest` in KV, then fires a single WhatsApp summary to Alvin + Ken.
+4. **dashboard** — the Weekly tab's "📈 Weekly Edge Report" panel reads `/api/weekly-edge?week=latest` on render and renders the markdown inline.
+
+### Required env vars
+
+**New (must be set before the first Sunday)**
+
+- `EDGE_HMAC_KEY` — random 32-byte hex (e.g. `openssl rand -hex 32`). The **same value** must be set in:
+  - Vercel project env (used by `api/edge-write.js` to verify)
+  - GitHub repo secret (used by `weekly-edge-publish.yml` to sign)
+
+**Optional**
+
+- `DEPLOY_HOST` (GitHub repo secret) — defaults to `https://alvin-monitor.vercel.app`. Set it if the deploy hostname differs.
+
+**Existing (already configured for the other crons; reused here)**
+
+- `CRON_SECRET` — bearer secret for `api/cron/edge-prep`
+- `KV_REST_API_URL` / `KV_REST_API_TOKEN` — Vercel KV (Upstash)
+- `WHATSAPP_ALVIN_PHONE` / `WHATSAPP_ALVIN_KEY` / `WHATSAPP_KEN_PHONE` / `WHATSAPP_KEN_KEY` — CallMeBot push for the summary WhatsApp
+
+### Endpoints
+
+| Path | Method | Auth | Purpose |
+|---|---|---|---|
+| `/api/cron/edge-prep` | POST | `Authorization: Bearer ${CRON_SECRET}` | Sunday-11:55 aggregator → KV |
+| `/api/edge-prep?week=current\|YYYY-WW` | GET | public | Reads the prep blob the agent consumes |
+| `/api/edge-write` | POST | `X-Signature: sha256=<hmac>` | Receives signed reports from the publish workflow |
+| `/api/weekly-edge?week=latest\|YYYY-WW` | GET | public | Reads the rendered markdown for the dashboard |
