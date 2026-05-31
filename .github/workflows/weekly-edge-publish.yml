@@ -1,0 +1,70 @@
+name: weekly-edge-publish
+
+# Fires when the edge-mining agent commits reports/weekly_edge_latest.md.
+# Signs the JSON body with EDGE_HMAC_KEY and POSTs to /api/edge-write,
+# which stashes it in KV and sends a WhatsApp ping.
+#
+# Required secrets:
+#   EDGE_HMAC_KEY — identical value to the one set in the Vercel project env.
+#   DEPLOY_HOST   — optional override; falls back to alvin-monitor.vercel.app.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/weekly_edge_latest.md'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign and POST report
+        env:
+          EDGE_HMAC_KEY: ${{ secrets.EDGE_HMAC_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EDGE_HMAC_KEY}" ]; then
+            echo "::error::EDGE_HMAC_KEY secret missing"; exit 1
+          fi
+          REPORT=reports/weekly_edge_latest.md
+          if [ ! -f "$REPORT" ]; then
+            echo "::error::$REPORT not found"; exit 1
+          fi
+
+          # Extract week tag from the first-line HTML comment:
+          #   <!-- week: YYYY-WW -->
+          WEEK=$(head -n 1 "$REPORT" | sed -nE 's/.*week:[[:space:]]*([0-9]{4}-[0-9]{2}).*/\1/p')
+          if [ -z "$WEEK" ] || [ "$WEEK" = "0000-00" ]; then
+            echo "Stub report (week=$WEEK); nothing to publish."
+            exit 0
+          fi
+
+          # Summary = first non-empty non-heading line.
+          SUMMARY=$(grep -vE '^(\s*#|\s*<!--|\s*$)' "$REPORT" | head -n 1 | tr -d '\r')
+
+          # Build JSON body using jq so embedded quotes/newlines round-trip safely.
+          BODY=$(jq -n \
+            --arg week "$WEEK" \
+            --rawfile md "$REPORT" \
+            --arg summary "$SUMMARY" \
+            '{week:$week, markdown:$md, summary:$summary}')
+
+          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex | awk '{print $2}')
+
+          HOST="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          response=$(curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: sha256=$SIG" \
+            --data "$BODY" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$HOST/api/edge-write")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-write returned $status"; exit 1
+          fi

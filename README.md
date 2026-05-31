@@ -56,3 +56,42 @@ The dashboard tries these Solana RPC endpoints in order:
 4. Solana mainnet (`api.mainnet-beta.solana.com`)
 
 When deployed on Vercel with a proper HTTPS origin, the public RPCs should work fine without needing a Helius key.
+
+## Weekly Edge Mining (Sunday 20:00 HKT)
+
+A weekly agent inspects the last 7d of trades + journals + violations and
+publishes a short report to the Weekly tab — flagging hour-of-day buckets,
+regime tilts, position-size bands, and one concrete config change to try.
+
+### Required env vars
+
+New for this routine:
+
+- `EDGE_HMAC_KEY` — shared secret used to authenticate the agent's report
+  write. Set the **same value** in both:
+  - Vercel project env: `EDGE_HMAC_KEY=<value>`
+  - GitHub repo secret: `EDGE_HMAC_KEY=<value>`
+  Generate locally with `openssl rand -hex 32`.
+
+Already used by other parts of the flow:
+
+- `CRON_SECRET` — gates `/api/cron/edge-prep` (shared with the existing crons).
+- `KV_REST_API_URL`, `KV_REST_API_TOKEN` — Vercel KV access.
+- `WHATSAPP_ALVIN_PHONE`, `WHATSAPP_ALVIN_KEY`, `WHATSAPP_KEN_PHONE`,
+  `WHATSAPP_KEN_KEY` — for the WhatsApp ping on publish (via `/api/notify`).
+
+### Sunday flow
+
+1. **11:55 UTC** — `.github/workflows/edge-prep-cron.yml` hits
+   `/api/cron/edge-prep`, which bakes 7d of trades + KV state into one JSON
+   blob in KV under `edge_prep:YYYY-WW` and `edge_prep:current`.
+2. **12:00 UTC** — the edge-mining agent reads `/api/edge-prep`, mines
+   patterns, and commits `reports/weekly_edge_latest.md` (plus a
+   per-week-tagged copy) to `main`.
+3. **on push** — `.github/workflows/weekly-edge-publish.yml` reads the
+   `_latest` report, extracts its week tag from the first-line HTML comment,
+   signs the JSON body with `EDGE_HMAC_KEY`, and POSTs to `/api/edge-write`.
+4. `/api/edge-write` stores the report under `weekly_edge:YYYY-WW`,
+   updates the `weekly_edge:latest` pointer, and pings Alvin + Ken via
+   `/api/notify`. The dashboard's Weekly tab pulls `/api/weekly-edge?week=latest`
+   on activation.

@@ -1,0 +1,37 @@
+name: edge-prep-cron
+
+# Sunday 11:55 UTC = 19:55 HKT. Fires ~5 min before the weekly edge-mining
+# agent wakes up at 12:00 UTC so the prep blob is ready when it reads
+# /api/edge-prep.
+#
+# Required secrets:
+#   CRON_SECRET  — shared with the other cron jobs.
+#   DEPLOY_HOST  — optional override; falls back to alvin-monitor.vercel.app.
+
+on:
+  schedule:
+    - cron: '55 11 * * 0'
+  workflow_dispatch:
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Hit /api/cron/edge-prep
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret missing"; exit 1
+          fi
+          HOST="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          response=$(curl -sS \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$HOST/api/cron/edge-prep?secret=$CRON_SECRET")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-prep endpoint returned $status"; exit 1
+          fi
