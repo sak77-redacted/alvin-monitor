@@ -1,0 +1,40 @@
+name: edge-prep-cron
+
+# Snapshots the last 7d of trading state into KV every Sunday so the
+# weekly Claude Code edge-mining routine (Sunday 20:00 HKT = 12:00 UTC)
+# has fresh data to read from /api/edge-prep when it runs five minutes later.
+#
+# 11:55 UTC dodges the top-of-hour GH Actions contention that can delay
+# scheduled runs by 30-60 min; we want to be done by 12:00 UTC.
+#
+# Reuses CRON_SECRET (same secret as the existing 5-min check / daily / digest crons).
+
+on:
+  schedule:
+    - cron: '55 11 * * 0'
+  workflow_dispatch:
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit /api/cron/edge-prep
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret missing"; exit 1
+          fi
+          host="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          response=$(curl -sS -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$host/api/cron/edge-prep")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-prep endpoint returned $status"; exit 1
+          fi

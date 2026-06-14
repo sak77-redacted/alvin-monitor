@@ -56,3 +56,29 @@ The dashboard tries these Solana RPC endpoints in order:
 4. Solana mainnet (`api.mainnet-beta.solana.com`)
 
 When deployed on Vercel with a proper HTTPS origin, the public RPCs should work fine without needing a Helius key.
+
+## Weekly Edge Mining
+
+A long-running Claude Code routine ("edge-mining-weekly") fires every Sunday 20:00 HKT (12:00 UTC) and writes `reports/weekly_edge_YYYY-WW.md` + `reports/weekly_edge_latest.md` summarising the past 7d of realised P&L, journal entries, and rule violations into the dashboard's Weekly tab.
+
+### Sunday flow
+
+1. **11:55 UTC** — `edge-prep-cron.yml` curls `/api/cron/edge-prep` (Bearer-auth with `CRON_SECRET`). The handler snapshots last-7d trades, journal, approvals/audit, samples, hourly P&L buckets, and regime history into KV at `edge_prep:YYYY-WW` (60d TTL) + `edge_prep:current` (14d TTL).
+2. **12:00 UTC** — Claude Code routine reads `/api/edge-prep?week=current`, mines bucket-significance, writes the markdown report to `reports/`, commits to `main`.
+3. **on push to `reports/weekly_edge_latest.md`** — `weekly-edge-publish.yml` extracts the week tag from line 1's `<!-- week: YYYY-WW -->` comment, HMAC-signs the body with `EDGE_HMAC_KEY`, and POSTs to `/api/edge-write`. That endpoint writes to KV and pings Ken via CallMeBot WhatsApp.
+
+### Required env vars
+
+New (this feature):
+
+- `EDGE_HMAC_KEY` — random 32+ byte secret. **Must be identical** in Vercel project env and GitHub repo secrets. Generate with `openssl rand -hex 32`.
+
+Already in use elsewhere; these endpoints reuse them:
+
+- `CRON_SECRET` — Bearer-auth for `/api/cron/edge-prep`. Same value as the other crons.
+- `KV_REST_API_URL` + `KV_REST_API_TOKEN` — Vercel KV.
+- `WHATSAPP_KEN_PHONE` + `WHATSAPP_KEN_KEY` — CallMeBot push to Ken (the weekly edge is a Ken-only notification, like the Monday digest).
+
+Optional GH repo secret:
+
+- `DEPLOY_HOST` — override the default `https://alvin-monitor.vercel.app` if the project is renamed.
