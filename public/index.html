@@ -279,7 +279,7 @@ const short = a => a ? a.slice(0,4)+'..'+a.slice(-4) : '—';
 const $ = id => document.getElementById(id);
 
 // ─── State ───
-let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, near:{ balance:null, price:null }, withdrawals:{}, approvals:{}, audit:[], samples:[], journal:{}, targets:{}, settings:{} };
+let S = { sol:null, usdc:null, usdt:null, solPrice:null, positions:[], trades:[], violations:[], weeklyData:[], lastUpdated:null, ms:{ sol:null, usdc:null, usdt:null, positions:[] }, near:{ balance:null, price:null }, withdrawals:{}, approvals:{}, audit:[], samples:[], journal:{}, targets:{}, settings:{}, weeklyEdge:null };
 
 // Regime → TP alert thresholds in multiples of collateral.
 // 'consistent' (default): tier2 at 2x money-out (= pnl >= 1×collateral), tier3 at 3x.
@@ -555,6 +555,71 @@ async function fetchWithdrawals() {
     const d = await r.json();
     S.withdrawals = d.withdrawals || {};
   } catch {}
+}
+
+async function fetchWeeklyEdge() {
+  try {
+    const r = await fetch('/api/weekly-edge?week=latest');
+    if (!r.ok) { S.weeklyEdge = null; return; }
+    S.weeklyEdge = await r.json();
+  } catch { S.weeklyEdge = null; }
+}
+
+// Minimal markdown renderer — enough for our reports (headings, bold, italic,
+// lists, code fences, inline code, links). Anything fancier we don't ship.
+function renderMarkdown(md) {
+  if (!md) return '';
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Lift fenced code blocks out first so their content isn't touched by other rules
+  const blocks = [];
+  md = md.replace(/```([a-z0-9_-]*)\n([\s\S]*?)```/gi, (_, lang, code) => {
+    blocks.push(`<pre style="background:#0a0e17;border:1px solid #1e293b;border-radius:4px;padding:10px;overflow-x:auto;font-size:11px;color:#e2e8f0;margin:8px 0"><code>${esc(code)}</code></pre>`);
+    return ` B${blocks.length - 1} `;
+  });
+  const lines = md.split('\n');
+  const out = [];
+  let inList = false;
+  for (let raw of lines) {
+    if (/^<!--.*-->$/.test(raw.trim())) continue;
+    let line = raw;
+    const liMatch = line.match(/^\s*[-*]\s+(.*)$/);
+    const olMatch = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (liMatch || olMatch) {
+      if (!inList) { out.push('<ul style="margin:6px 0 6px 18px;padding:0">'); inList = true; }
+      out.push(`<li style="margin:3px 0">${inlineMd(esc((liMatch||olMatch)[1]))}</li>`);
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      const lvl = h[1].length;
+      const size = [18, 15, 13, 12][lvl - 1];
+      out.push(`<div style="font-size:${size}px;font-weight:700;color:#e2e8f0;margin:12px 0 6px">${inlineMd(esc(h[2]))}</div>`);
+      continue;
+    }
+    if (!line.trim()) { out.push('<div style="height:6px"></div>'); continue; }
+    out.push(`<div style="margin:4px 0;color:#cbd5e1;line-height:1.55">${inlineMd(esc(line))}</div>`);
+  }
+  if (inList) out.push('</ul>');
+  let html = out.join('');
+  html = html.replace(/ B(\d+) /g, (_, i) => blocks[Number(i)] || '');
+  return html;
+}
+function inlineMd(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code style="background:#1e293b;padding:1px 5px;border-radius:3px;font-size:11px;color:#e2e8f0">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e2e8f0">$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#3b82f6">$1</a>');
+}
+
+function weeklyEdgePanelHtml() {
+  const e = S.weeklyEdge;
+  if (!e || !e.markdown) {
+    return `<div class="panel" style="border:1px solid #1e293b"><div class="pl">📈 Weekly Edge Report</div><div style="color:#64748b;font-size:12px;padding:6px 0">No published report yet. The Sunday 20:00 HKT routine writes the first real one once <code>EDGE_HMAC_KEY</code> is configured.</div></div>`;
+  }
+  const ts = e.generated_at ? new Date(e.generated_at).toLocaleString('en-AU', { timeZone: 'Asia/Hong_Kong', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  return `<div class="panel" style="border:1px solid #3b82f650"><div class="pl" style="display:flex;justify-content:space-between;align-items:baseline"><span>📈 Weekly Edge Report · ${e.week || ''}</span>${ts ? `<span style="font-size:10px;color:#64748b;font-weight:400">generated ${ts} HKT</span>` : ''}</div><div style="font-size:13px">${renderMarkdown(e.markdown)}</div></div>`;
 }
 
 // ─── Withdrawal claim modal — "Alvin said he'd buy NEAR with this" ───
@@ -1930,7 +1995,7 @@ function downloadWeeklyCsv() {
 }
 
 function renderWeekly() {
-  if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
+  if (!S.weeklyData.length) { $('tab-weekly').innerHTML = weeklyEdgePanelHtml() + '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
   // P&L periods — MTD / YTD / LTD live here; WTD stays on Overview as the budget unit
   const pp = periodPnl();
@@ -1939,7 +2004,8 @@ function renderWeekly() {
     const liqBit = d.liqs ? ` · ${d.liqs} liq` : '';
     return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
   };
-  let html = `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  let html = weeklyEdgePanelHtml();
+  html += `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
   html += renderEquityCurve();
   html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
@@ -2346,6 +2412,7 @@ async function init() {
       fetchTargets(),         // side-effect only, not destructured
       fetchSettings(),        // side-effect only, not destructured
       fetchWithdrawals(),     // side-effect only, not destructured
+      fetchWeeklyEdge(),      // side-effect only, not destructured
     ]);
     S.sol = tBal.value / 1e9;
     S.usdc = tokenUiAmount(tUsdc);

@@ -1,0 +1,65 @@
+name: weekly-edge-publish
+
+# Publishes reports/weekly_edge_latest.md to the dashboard via HMAC-signed
+# POST to /api/edge-write. Triggered by any push to that file — the Sunday
+# Claude Code routine commits the new report there (and to the dated copy)
+# and this workflow picks it up.
+#
+# Required GH secrets:
+#   EDGE_HMAC_KEY  — shared with the Vercel env var of the same name
+#   DEPLOY_HOST    — optional; defaults to https://alvin-monitor.vercel.app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/weekly_edge_latest.md'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign + POST report to /api/edge-write
+        env:
+          EDGE_HMAC_KEY: ${{ secrets.EDGE_HMAC_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EDGE_HMAC_KEY:-}" ]; then
+            echo "::error::EDGE_HMAC_KEY secret missing — set it in repo secrets and Vercel env"; exit 1
+          fi
+          host="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          file=reports/weekly_edge_latest.md
+          if [ ! -f "$file" ]; then
+            echo "::error::$file not found"; exit 1
+          fi
+          # Pull YYYY-WW out of line 1's `<!-- week: ... -->` comment
+          week=$(head -n1 "$file" | sed -nE 's/^<!--[[:space:]]*week:[[:space:]]*([0-9]{4}-[0-9]{2})[[:space:]]*-->.*/\1/p')
+          if [ -z "$week" ] || [ "$week" = "0000-00" ]; then
+            echo "No real week tag on line 1 yet (got: '$week') — skipping publish."
+            exit 0
+          fi
+          # First non-empty non-heading line → summary
+          summary=$(grep -m1 -E '^[^#[:space:]<]' "$file" || echo "")
+          # JSON-encode body with jq to handle any markdown characters safely
+          body=$(jq -nc \
+            --arg week "$week" \
+            --rawfile markdown "$file" \
+            --arg summary "$summary" \
+            '{week:$week, markdown:$markdown, summary:$summary}')
+          sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex | awk '{print $2}')
+          echo "Publishing week $week to $host"
+          response=$(curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: sha256=$sig" \
+            --data "$body" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$host/api/edge-write")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-write returned $status"; exit 1
+          fi
