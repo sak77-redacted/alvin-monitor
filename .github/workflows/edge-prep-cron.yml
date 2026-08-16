@@ -1,0 +1,39 @@
+name: edge-prep-cron
+
+# Pings /api/cron/edge-prep on Sunday 11:55 UTC (7:55 PM HKT) so the
+# aggregate blob is fresh when the weekly edge-mining routine runs at
+# 12:00 UTC (8:00 PM HKT).
+#
+# Required secret: CRON_SECRET — same value used by daily-cron/digest-cron.
+# Optional secret: DEPLOY_HOST — override the default hostname.
+
+on:
+  schedule:
+    - cron: '55 11 * * 0'
+  workflow_dispatch:
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Hit /api/cron/edge-prep
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret missing"; exit 1
+          fi
+          HOST="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          # Bearer header preferred over ?secret= to keep the secret out of
+          # URL / access logs; the endpoint accepts either style.
+          response=$(curl -sS \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$HOST/api/cron/edge-prep")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-prep endpoint returned $status"; exit 1
+          fi
