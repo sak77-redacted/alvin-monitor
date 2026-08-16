@@ -48,12 +48,17 @@ jobs:
           SUMMARY=$(grep -vE '^\s*(#|<!--|$)' "$FILE" | head -n 1 | sed 's/[[:space:]]*$//')
           if [ -z "$SUMMARY" ]; then SUMMARY="(no summary line)"; fi
 
-          # Build JSON payload with jq to escape correctly.
+          # Signature is over a canonical string of parsed fields (not the raw
+          # JSON body), so the server can rely on Vercel's default body parsing
+          # without needing to reconstruct the exact bytes we sent:
+          #   canonical = "${WEEK}\n${sha256(markdown)}\n${SUMMARY}"
+          MD_SHA=$(sha256sum "$FILE" | awk '{print $1}')
+          CANONICAL=$(printf '%s\n%s\n%s' "$WEEK" "$MD_SHA" "$SUMMARY")
+          SIG=$(printf '%s' "$CANONICAL" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex \
+            | awk '{print $NF}')
+
           BODY=$(jq -cn --arg w "$WEEK" --arg m "$(cat "$FILE")" --arg s "$SUMMARY" \
             '{week:$w, markdown:$m, summary:$s}')
-
-          SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex \
-            | awk '{print $NF}')
 
           echo "Publishing week=$WEEK ($(printf '%s' "$BODY" | wc -c) bytes) → $HOST"
           response=$(curl -sS -X POST \
