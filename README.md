@@ -56,3 +56,35 @@ The dashboard tries these Solana RPC endpoints in order:
 4. Solana mainnet (`api.mainnet-beta.solana.com`)
 
 When deployed on Vercel with a proper HTTPS origin, the public RPCs should work fine without needing a Helius key.
+
+## Weekly Edge Mining (Sunday 20:00 HKT)
+
+An automated routine mines edge patterns from the last 7d of realized trading outcomes each Sunday and posts a markdown report to the dashboard's Weekly tab (plus a WhatsApp ping to both operators).
+
+Flow:
+
+1. **11:55 UTC** — `.github/workflows/edge-prep-cron.yml` curls `/api/cron/edge-prep`, which aggregates trades/journal/samples/violations/hourly buckets/regime history into a single JSON blob at KV key `edge_prep:current`.
+2. **12:00 UTC** — the scheduled edge-mining agent (configured at https://claude.ai/code/routines) reads `/api/edge-prep`, buckets by hour-of-day, market, regime, and size band, then commits `reports/weekly_edge_YYYY-WW.md` + `reports/weekly_edge_latest.md` to `main`.
+3. **push trigger** — `.github/workflows/weekly-edge-publish.yml` fires on any push touching `reports/weekly_edge_latest.md`, extracts the ISO-week tag from the file's `<!-- week: YYYY-WW -->` header comment, HMAC-signs `{week, markdown, summary}`, and POSTs to `/api/edge-write`. That writes to KV under `weekly_edge:<week>` and pings both operators.
+
+### Required env vars
+
+- **`EDGE_HMAC_KEY`** — new. Add to Vercel project env **and** as a GitHub repo secret with the identical value. Generate with `openssl rand -hex 32`.
+
+### Reused env vars
+
+- `CRON_SECRET` — same secret as the other cron endpoints; gates `/api/cron/edge-prep`.
+- `KV_REST_API_URL` + `KV_REST_API_TOKEN` — Vercel KV credentials.
+- `WHATSAPP_ALVIN_PHONE` + `WHATSAPP_ALVIN_KEY` + `WHATSAPP_KEN_PHONE` + `WHATSAPP_KEN_KEY` — CallMeBot credentials used by the publish notification.
+- Optional: GitHub secret `DEPLOY_HOST` — overrides the default `https://alvin-monitor.vercel.app` for both workflows.
+
+### Endpoints
+
+- `GET /api/cron/edge-prep` (auth: `Authorization: Bearer $CRON_SECRET` or `?secret=$CRON_SECRET`) — refreshes `edge_prep:current`.
+- `GET /api/edge-prep?week=current|YYYY-WW` — public read of the aggregate blob.
+- `POST /api/edge-write` (auth: `X-Signature: sha256=<hmac-sha256(EDGE_HMAC_KEY, raw-body)>`) — writes the weekly report + notifies.
+- `GET /api/weekly-edge?week=latest|YYYY-WW` — public read of the rendered report; the dashboard's Weekly Edge panel consumes this.
+
+### Exit criteria
+
+The routine tracks a cumulative count of significant-pattern weeks across the last 8 reports; three consecutive weeks with no significant pattern surfaces an exit-approaching banner in the report.

@@ -1,0 +1,74 @@
+name: weekly-edge-publish
+
+# Triggers when the Sunday edge-mining agent commits its markdown to main.
+# Extracts the ISO-week tag from a `<!-- week: YYYY-WW -->` HTML comment on
+# line 1 of reports/weekly_edge_latest.md (so the filename can stay stable),
+# then POSTs an HMAC-signed body to /api/edge-write which updates KV +
+# notifies both operators.
+#
+# Required secret: EDGE_HMAC_KEY — must match the value set in Vercel env.
+# Optional secret: DEPLOY_HOST — override the default hostname.
+
+on:
+  push:
+    branches: [main]
+    paths: ['reports/weekly_edge_latest.md']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Extract week + summary and sign
+        env:
+          EDGE_HMAC_KEY: ${{ secrets.EDGE_HMAC_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EDGE_HMAC_KEY" ]; then
+            echo "::error::EDGE_HMAC_KEY secret is not configured"; exit 1
+          fi
+          HOST="${DEPLOY_HOST:-https://alvin-monitor.vercel.app}"
+          FILE="reports/weekly_edge_latest.md"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE missing"; exit 1
+          fi
+
+          WEEK=$(head -n 1 "$FILE" | grep -oE 'week: [0-9]{4}-[0-9]{2}' | awk '{print $2}' || true)
+          if [ -z "$WEEK" ] || [ "$WEEK" = "0000-00" ]; then
+            echo "First-run stub or malformed header on line 1 (got: $(head -n1 $FILE)); skipping publish"
+            exit 0
+          fi
+
+          # summary = first non-empty non-heading non-comment line
+          SUMMARY=$(grep -vE '^\s*(#|<!--|$)' "$FILE" | head -n 1 | sed 's/[[:space:]]*$//')
+          if [ -z "$SUMMARY" ]; then SUMMARY="(no summary line)"; fi
+
+          # Signature is over a canonical string of parsed fields (not the raw
+          # JSON body), so the server can rely on Vercel's default body parsing
+          # without needing to reconstruct the exact bytes we sent:
+          #   canonical = "${WEEK}\n${sha256(markdown)}\n${SUMMARY}"
+          MD_SHA=$(sha256sum "$FILE" | awk '{print $1}')
+          CANONICAL=$(printf '%s\n%s\n%s' "$WEEK" "$MD_SHA" "$SUMMARY")
+          SIG=$(printf '%s' "$CANONICAL" | openssl dgst -sha256 -hmac "$EDGE_HMAC_KEY" -hex \
+            | awk '{print $NF}')
+
+          BODY=$(jq -cn --arg w "$WEEK" --arg m "$(cat "$FILE")" --arg s "$SUMMARY" \
+            '{week:$w, markdown:$m, summary:$s}')
+
+          echo "Publishing week=$WEEK ($(printf '%s' "$BODY" | wc -c) bytes) → $HOST"
+          response=$(curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: sha256=$SIG" \
+            --data "$BODY" \
+            -w "\n--- HTTP %{http_code} · %{time_total}s\n" \
+            "$HOST/api/edge-write")
+          echo "$response"
+          status=$(echo "$response" | grep -oE 'HTTP [0-9]+' | tail -1 | awk '{print $2}')
+          if [ "$status" != "200" ]; then
+            echo "::error::edge-write returned $status"; exit 1
+          fi

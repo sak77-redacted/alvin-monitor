@@ -1383,6 +1383,7 @@ function stab(n, el) {
   $('tab-'+n).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
+  if (n === 'weekly') fetchAndRenderWeeklyEdge();
 }
 
 // ─── Helpers ───
@@ -1929,6 +1930,85 @@ function downloadWeeklyCsv() {
   URL.revokeObjectURL(url);
 }
 
+// Weekly Edge Report — pulled from /api/weekly-edge, rendered inside the
+// panel div by fetchAndRenderWeeklyEdge() below. Rendered as a stub first;
+// the fetch fills in on tab activation.
+function renderWeeklyEdgePanel() {
+  const stamp = S.weeklyEdge?.generated_at
+    ? ` · updated ${new Date(S.weeklyEdge.generated_at).toLocaleDateString('en-AU', { day:'2-digit', month:'short' })}`
+    : '';
+  const inner = S.weeklyEdge?.markdown
+    ? mdToHtml(S.weeklyEdge.markdown)
+    : S.weeklyEdge?.error === 'pending'
+      ? '<div style="color:#64748b;font-size:12px;padding:10px 0">First report lands next Sunday 20:00 HKT once secrets are configured.</div>'
+      : S.weeklyEdge?.error
+        ? `<div style="color:#ef4444;font-size:12px;padding:10px 0">Weekly edge fetch failed: ${S.weeklyEdge.error}</div>`
+        : '<div style="color:#64748b;font-size:12px;padding:10px 0">Loading…</div>';
+  return `<div class="panel" id="weeklyEdgePanel"><div class="pl">📈 Weekly Edge Report${stamp}</div><div class="weekly-edge-body" style="font-size:12px;line-height:1.55;color:#e2e8f0">${inner}</div></div>`;
+}
+
+// Minimal-safe markdown: headings, paragraphs, bold, emphasis, inline code,
+// fenced code blocks, unordered lists, ordered lists. Everything is escaped
+// before pattern substitution so the report body can't inject HTML.
+function mdToHtml(md) {
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let src = String(md || '');
+  // Strip the leading <!-- week: --> comment; we already show generated_at.
+  src = src.replace(/^\s*<!--[\s\S]*?-->\s*/, '');
+  // Fenced code blocks first so nothing else touches their contents.
+  const codeBlocks = [];
+  src = src.replace(/```([a-z0-9]*)\n([\s\S]*?)```/gi, (_, lang, body) => {
+    codeBlocks.push(`<pre style="background:#0a0e17;border:1px solid #1e293b;border-radius:4px;padding:10px;overflow-x:auto;font-size:11px;color:#94a3b8"><code>${esc(body).replace(/\n$/, '')}</code></pre>`);
+    return `\x00CODE${codeBlocks.length - 1}\x00`;
+  });
+  src = esc(src);
+  // Headings
+  src = src.replace(/^######\s+(.+)$/gm, '<h6 style="font-size:11px;color:#94a3b8;margin:12px 0 4px 0">$1</h6>');
+  src = src.replace(/^#####\s+(.+)$/gm, '<h5 style="font-size:12px;color:#94a3b8;margin:12px 0 4px 0">$1</h5>');
+  src = src.replace(/^####\s+(.+)$/gm, '<h4 style="font-size:13px;color:#cbd5e1;margin:14px 0 6px 0">$1</h4>');
+  src = src.replace(/^###\s+(.+)$/gm, '<h3 style="font-size:13px;color:#e2e8f0;margin:14px 0 6px 0">$1</h3>');
+  src = src.replace(/^##\s+(.+)$/gm, '<h2 style="font-size:14px;color:#e2e8f0;margin:16px 0 8px 0;border-bottom:1px solid #1e293b;padding-bottom:4px">$1</h2>');
+  src = src.replace(/^#\s+(.+)$/gm, '<h1 style="font-size:16px;color:#e2e8f0;margin:0 0 12px 0">$1</h1>');
+  // Inline
+  src = src.replace(/`([^`]+?)`/g, '<code style="background:#0a0e17;padding:1px 5px;border-radius:3px;font-size:11px;color:#c084fc">$1</code>');
+  src = src.replace(/\*\*([^*]+?)\*\*/g, '<strong style="color:#f1f5f9">$1</strong>');
+  src = src.replace(/(^|[^*])\*([^*\n]+?)\*/g, '$1<em>$2</em>');
+  // Lists — collapse consecutive bullet lines into <ul>. Ordered similarly.
+  src = src.replace(/(?:^[-*] .+(?:\n|$))+/gm, block => {
+    const items = block.trim().split(/\n/).map(l => l.replace(/^[-*]\s+/, '')).map(l => `<li>${l}</li>`).join('');
+    return `<ul style="margin:6px 0 10px 20px;padding:0">${items}</ul>`;
+  });
+  src = src.replace(/(?:^\d+\.\s+.+(?:\n|$))+/gm, block => {
+    const items = block.trim().split(/\n/).map(l => l.replace(/^\d+\.\s+/, '')).map(l => `<li>${l}</li>`).join('');
+    return `<ol style="margin:6px 0 10px 20px;padding:0">${items}</ol>`;
+  });
+  // Paragraphs — split on blank line, wrap the loose lines
+  src = src.split(/\n\n+/).map(chunk => {
+    if (/^\s*<(h\d|ul|ol|pre|blockquote)/.test(chunk)) return chunk;
+    if (!chunk.trim()) return '';
+    return `<p style="margin:0 0 10px 0">${chunk.replace(/\n/g, '<br>')}</p>`;
+  }).join('\n');
+  // Restore code blocks
+  src = src.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[Number(i)]);
+  return src;
+}
+
+let _weeklyEdgeLoaded = false;
+async function fetchAndRenderWeeklyEdge() {
+  if (_weeklyEdgeLoaded) return;
+  _weeklyEdgeLoaded = true;
+  try {
+    const r = await fetch('/api/weekly-edge?week=latest', { cache: 'no-store' });
+    if (r.status === 404) { S.weeklyEdge = { error: 'pending' }; }
+    else if (!r.ok) { S.weeklyEdge = { error: `HTTP ${r.status}` }; }
+    else { S.weeklyEdge = await r.json(); }
+  } catch (e) {
+    S.weeklyEdge = { error: e?.message || 'fetch failed' };
+  }
+  const el = document.getElementById('weeklyEdgePanel');
+  if (el) el.outerHTML = renderWeeklyEdgePanel();
+}
+
 function renderWeekly() {
   if (!S.weeklyData.length) { $('tab-weekly').innerHTML = '<div class="panel" style="text-align:center;color:#475569;padding:30px">No weekly data</div>'; return; }
 
@@ -1940,6 +2020,7 @@ function renderWeekly() {
     return `<div class="card" style="border:1px solid ${col}30"><div class="cs" style="background:${col}"></div><div class="cl">${label} P&L</div><div class="cv" style="color:${col}">${pnlStr(d.pnl)}</div><div class="cu">${d.closes} close${d.closes===1?'':'s'}${liqBit} · ${sub}</div></div>`;
   };
   let html = `<div class="cards" style="margin-bottom:14px">${periodCard('MTD', pp.mtd, 'this month') + periodCard('YTD', pp.ytd, 'this year') + periodCard('LTD', pp.ltd, 'since tracking')}</div>`;
+  html += renderWeeklyEdgePanel();
   html += renderEquityCurve();
   html += renderDailyPnL();
   html += `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="downloadWeeklyCsv()" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;padding:6px 12px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Download CSV</button></div>`;
